@@ -5,6 +5,7 @@ import { VoipMsProvider } from './voipms/index.js';
 import { WhatsAppProvider } from './whatsapp/index.js';
 import { TelegramProvider } from './telegram/index.js';
 import { MattermostProvider } from './mattermost/index.js';
+import { SignalProvider } from './signal/index.js';
 
 const NONE: Capabilities = {
   reply: false,
@@ -55,6 +56,7 @@ export async function startProviders(): Promise<void> {
   registerProvider(new WhatsAppProvider());
   registerProvider(new TelegramProvider());
   registerProvider(new MattermostProvider());
+  registerProvider(new SignalProvider());
   for (const p of providers.values()) {
     try {
       await p.start();

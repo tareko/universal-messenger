@@ -70,6 +70,12 @@ export interface MattermostState {
   dmsOnly?: boolean;
 }
 
+export interface SignalState {
+  state: 'idle' | 'connecting' | 'qr' | 'open' | 'error' | 'unavailable';
+  accountId: string | null;
+  url: string;
+}
+
 export interface LinkPreview {
   url: string;
   title: string;
@@ -98,6 +104,11 @@ export const api = {
   mattermostLogout: () => postJson<{ ok: boolean }>('/providers/mattermost/logout', {}),
   mattermostSettings: (dmsOnly: boolean) =>
     postJson<{ ok: boolean }>('/providers/mattermost/settings', { dmsOnly }),
+  signalStatus: () => getJson<SignalState>('/providers/signal/status'),
+  signalConfigure: (url: string) => postJson<{ ok: boolean }>('/providers/signal/configure', { url }),
+  signalQrcode: () => getJson<{ qr: string | null }>('/providers/signal/qrcode'),
+  signalLink: () => postJson<{ ok: boolean }>('/providers/signal/link', {}),
+  signalDisconnect: () => postJson<{ ok: boolean }>('/providers/signal/disconnect', {}),
   chats: (accountId?: string) =>
     getJson<Chat[]>(accountId ? `/chats?account=${encodeURIComponent(accountId)}` : '/chats'),
   newChat: (accountId: string, to: string) =>

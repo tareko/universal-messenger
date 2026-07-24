@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, type MattermostState, type TelegramState, type WhatsAppState } from '../api';
+import { api, type MattermostState, type SignalState, type TelegramState, type WhatsAppState } from '../api';
 import { useStore } from '../store';
 import { providerBadge } from './AccountSwitcher';
 
@@ -10,6 +10,7 @@ export function AccountsDialog({ onClose }: { onClose: () => void }) {
   const [wa, setWa] = useState<WhatsAppState | null>(null);
   const [tg, setTg] = useState<TelegramState | null>(null);
   const [mm, setMm] = useState<MattermostState | null>(null);
+  const [sg, setSg] = useState<SignalState | null>(null);
   const [busy, setBusy] = useState(false);
 
   const poll = useCallback(async () => {
@@ -26,6 +27,11 @@ export function AccountsDialog({ onClose }: { onClose: () => void }) {
     }
     try {
       setMm(await api.mattermostStatus());
+    } catch {
+      /* keep last known state */
+    }
+    try {
+      setSg(await api.signalStatus());
     } catch {
       /* keep last known state */
     }
@@ -52,6 +58,7 @@ export function AccountsDialog({ onClose }: { onClose: () => void }) {
   const waAccount = accounts.find((a) => a.provider === 'whatsapp');
   const tgAccount = accounts.find((a) => a.provider === 'telegram');
   const mmAccount = accounts.find((a) => a.provider === 'mattermost');
+  const sgAccount = accounts.find((a) => a.provider === 'signal');
 
   return (
     <>
@@ -107,6 +114,7 @@ export function AccountsDialog({ onClose }: { onClose: () => void }) {
 
         <TelegramSection tg={tg} account={tgAccount} busy={busy} run={run} />
         <MattermostSection mm={mm} account={mmAccount} busy={busy} run={run} />
+        <SignalSection sg={sg} account={sgAccount} busy={busy} run={run} />
 
         <div className="dialog-actions">
           <button className="dialog-cancel" onClick={onClose}>
@@ -115,6 +123,83 @@ export function AccountsDialog({ onClose }: { onClose: () => void }) {
         </div>
       </div>
     </>
+  );
+}
+
+function SignalSection({
+  sg,
+  account,
+  busy,
+  run,
+}: {
+  sg: SignalState | null;
+  account: { label: string } | undefined;
+  busy: boolean;
+  run: (fn: () => Promise<unknown>) => Promise<void>;
+}) {
+  const [url, setUrl] = useState('');
+  const [qr, setQr] = useState<string | null>(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (sg?.url && !url) setUrl(sg.url);
+  }, [sg?.url]);
+
+  async function link() {
+    setError('');
+    setQr(null);
+    try {
+      await run(async () => {
+        await api.signalConfigure(url.trim() || 'http://localhost:8080');
+        const { qr } = await api.signalQrcode();
+        if (!qr) throw new Error('Could not reach the signal-cli sidecar for a QR code');
+        setQr(qr);
+        await api.signalLink();
+      });
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  const connected = sg?.state === 'open' || Boolean(account?.label);
+
+  return (
+    <div className="dialog-section">
+      <div className="dialog-section-title">Signal</div>
+      {connected ? (
+        <div className="wa-linked">
+          <p>Linked{account ? ` as ${account.label}` : ''}.</p>
+          <button className="dialog-cancel" disabled={busy} onClick={() => void run(() => api.signalDisconnect())}>
+            Disconnect
+          </button>
+        </div>
+      ) : (
+        <div className="wa-linked">
+          <p>
+            Requires a signal-cli REST sidecar (e.g.{' '}
+            <code>docker run -p 8080:8080 bbernhard/signal-cli-rest-api</code> in json-rpc mode).
+            Link this app as a secondary device.
+          </p>
+          <div className="tg-form">
+            <input
+              placeholder="http://localhost:8080"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+            />
+            <button className="dialog-cancel" disabled={busy || !url.trim()} onClick={() => void link()}>
+              {sg?.state === 'qr' ? 'Waiting for scan…' : 'Get link QR'}
+            </button>
+            {error && <span className="attach-error">{error}</span>}
+          </div>
+          {qr && (
+            <div className="wa-qr">
+              <img src={qr} alt="Signal linking QR code" />
+              <p>Scan with Signal → Settings → Linked devices → Link new device</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

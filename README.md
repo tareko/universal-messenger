@@ -48,6 +48,19 @@ history backfill, native reactions and forwards.
 **Mattermost** — server URL + personal access token; channels or DMs-only
 mode, threads as quote replies, native reactions, WebSocket realtime.
 
+**Signal** — via a [signal-cli REST sidecar](https://github.com/bbernhard/signal-cli-rest-api)
+(run locally). Example:
+
+```sh
+docker run -d --name signal-api -p 8090:8080 \
+  -v signal-cli-config:/home/.local/share/signal-cli \
+  -e MODE=json-rpc bbernhard/signal-cli-rest-api
+```
+
+Then ⚙ → Signal → enter `http://localhost:8090` → "Get link QR" and scan
+with Signal → Settings → Linked devices. Note: Signal offers **no history
+sync**, so messages accrue from link time onward.
+
 ## Quick start
 
 ```sh

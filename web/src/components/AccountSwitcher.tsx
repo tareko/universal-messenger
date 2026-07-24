@@ -5,6 +5,7 @@ const PROVIDER_BADGE: Record<string, string> = {
   whatsapp: 'WA',
   telegram: 'TG',
   mattermost: 'MM',
+  signal: 'SG',
 };
 
 export function providerBadge(provider: string): string {

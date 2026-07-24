@@ -34,6 +34,7 @@ import { VoipMsProvider } from '../providers/voipms/index.js';
 import { WhatsAppProvider } from '../providers/whatsapp/index.js';
 import { TelegramProvider } from '../providers/telegram/index.js';
 import { MattermostProvider } from '../providers/mattermost/index.js';
+import { SignalProvider } from '../providers/signal/index.js';
 import { syncContacts, getCarddavStatus } from '../contacts/carddav.js';
 import { broadcast } from '../realtime/sse.js';
 import { getMediaPath, mediaContentType, saveUploadedMedia, loadMediaBuffer } from '../services/media.js';
@@ -290,6 +291,47 @@ api.get('/link-preview', async (req, res) => {
   if (!url) return res.json({ preview: null });
   const preview = await fetchLinkPreview(url);
   res.json({ preview });
+});
+
+// ---------- Signal onboarding (signal-cli REST sidecar) ----------
+
+function signal(): SignalProvider | null {
+  return (getProvider('signal') as SignalProvider | undefined) ?? null;
+}
+
+api.get('/providers/signal/status', (_req, res) => {
+  res.json(signal()?.getPublicState() ?? { state: 'unavailable', accountId: null, url: '' });
+});
+
+/** Save the sidecar URL (default http://localhost:8080). */
+api.post('/providers/signal/configure', async (req, res) => {
+  const { url } = req.body as { url?: string };
+  await signal()?.configure(url || 'http://localhost:8080');
+  res.json({ ok: true });
+});
+
+/** The device-linking QR from the sidecar (PNG as data URL). */
+api.get('/providers/signal/qrcode', async (_req, res) => {
+  const qr = await signal()?.getLinkQr();
+  if (!qr) return res.json({ qr: null });
+  res.json({ qr: `data:${qr.contentType};base64,${qr.data}` });
+});
+
+/** Start waiting for the link to complete (polls the sidecar's accounts). */
+api.post('/providers/signal/link', (_req, res) => {
+  void signal()
+    ?.waitForLink()
+    .catch((e) => console.error('[signal] link failed:', (e as Error).message));
+  res.json({ ok: true });
+});
+
+api.post('/providers/signal/disconnect', async (_req, res) => {
+  try {
+    await signal()?.disconnect();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
 });
 
 api.get('/status', (_req, res) => {
