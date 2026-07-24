@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { useStore } from '../store';
+import { useStore, isPersonSelection } from '../store';
 import { api } from '../api';
 import { EmojiPicker } from './EmojiPicker';
+import { providerBadge } from './AccountSwitcher';
 import { searchEmojis } from '../emoji';
 
 const SMS_LIMIT = 160;
@@ -71,6 +72,7 @@ function tokenAt(text: string, caret: number): EmojiToken | null {
 export function Composer() {
   const selectedChat = useStore((s) => s.selectedChat);
   const chats = useStore((s) => s.chats);
+  const people = useStore((s) => s.people);
   const replyTo = useStore((s) => s.replyTo);
   const setReplyTo = useStore((s) => s.setReplyTo);
   const sendMessage = useStore((s) => s.sendMessage);
@@ -87,6 +89,15 @@ export function Composer() {
   const chat = chats.find((c) => c.id === selectedChat);
   // SMS character accounting only applies to SMS/MMS providers.
   const isSms = chat?.provider === 'voipms';
+
+  // Linked person: per-message service override via the split send button.
+  const person = isPersonSelection(selectedChat)
+    ? people.find((p) => `person:${p.id}` === selectedChat)
+    : people.find((p) => selectedChat != null && p.chatIds.includes(selectedChat));
+  const memberChats = person ? chats.filter((c) => person.chatIds.includes(c.id)) : [];
+  const [targetOverride, setTargetOverride] = useState<string | null>(null);
+  const [targetMenuOpen, setTargetMenuOpen] = useState(false);
+  useEffect(() => setTargetOverride(null), [selectedChat]);
 
   const suggestions = token ? searchEmojis(token.query, 8) : [];
   const showSuggest = suggestions.length > 0;
@@ -191,16 +202,18 @@ export function Composer() {
   async function submit() {
     if (!canSend) return;
     const body = trimmed;
+    const forced = targetOverride ?? undefined;
+    setTargetOverride(null); // override is per-message
     if (attachment) {
       const att = attachment;
       setAttachment(null);
       setText('');
       setPrepError(null);
-      await sendMedia(att.blob, att.contentType, body, att.previewUrl);
+      await sendMedia(att.blob, att.contentType, body, att.previewUrl, forced);
     } else {
       setText('');
       setPrepError(null);
-      await sendMessage(body);
+      await sendMessage(body, forced);
     }
   }
 
@@ -361,9 +374,51 @@ export function Composer() {
             {mmsMode && <span className="mms-tag">MMS</span>}
           </span>
         )}
-        <button className="send-btn" disabled={!canSend} onClick={() => void submit()}>
-          Send
-        </button>
+        <div className="send-wrap">
+          <button
+            className={`send-btn${memberChats.length > 1 ? ' split' : ''}`}
+            disabled={!canSend}
+            onClick={() => void submit()}
+          >
+            Send
+          </button>
+          {memberChats.length > 1 && (
+            <>
+              <button
+                className="send-caret"
+                title="Choose service for this message"
+                onClick={() => setTargetMenuOpen((v) => !v)}
+              >
+                ▾
+              </button>
+              {targetMenuOpen && (
+                <>
+                  <div className="react-backdrop" onClick={() => setTargetMenuOpen(false)} />
+                  <div className="send-target-menu">
+                    {memberChats.map((c) => (
+                      <button
+                        key={c.id}
+                        className="send-target-row"
+                        onClick={() => {
+                          setTargetOverride(c.id);
+                          setTargetMenuOpen(false);
+                        }}
+                      >
+                        <span className="provider-badge">{providerBadge(c.provider)}</span>
+                        <span className="send-target-name">
+                          {c.name ?? c.contactRaw ?? c.remoteId}
+                        </span>
+                        {(targetOverride ?? person?.defaultChatId) === c.id && (
+                          <span className="send-target-check">✓</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

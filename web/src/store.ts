@@ -41,8 +41,14 @@ interface StoreState {
   refreshMessages: () => Promise<void>;
   loadOlderMessages: () => Promise<void>;
   backfillHistory: () => Promise<{ newMessages: number; reachedLimit: boolean }>;
-  sendMessage: (text: string) => Promise<void>;
-  sendMedia: (file: Blob, contentType: string, text: string, previewUrl?: string) => Promise<void>;
+  sendMessage: (text: string, forceChatId?: string) => Promise<void>;
+  sendMedia: (
+    file: Blob,
+    contentType: string,
+    text: string,
+    previewUrl?: string,
+    forceChatId?: string
+  ) => Promise<void>;
   retryText: (id: string, text: string) => Promise<void>;
   reactMessage: (messageId: string, emoji: string) => Promise<void>;
   forwardMessage: (messageId: string, targetChatId: string) => Promise<void>;
@@ -251,14 +257,14 @@ export const useStore = create<StoreState>((set, get) => ({
     }
   },
 
-  sendMessage: async (text: string) => {
+  sendMessage: async (text: string, forceChatId?: string) => {
     const { selectedChat, messages, chats, replyTo } = get();
     const body = text.trim();
     if (!selectedChat || !body) return;
     void get().markRead(selectedChat); // replying = actively reading
     // Linked person: route to default chat, or the chat of the last incoming
     // message ("reply via originating service").
-    const targetChatId = resolveTargetChat(get());
+    const targetChatId = resolveTargetChat(get(), forceChatId);
     const chat = chats.find((c) => c.id === targetChatId);
     const quoted = replyTo
       ? { id: replyTo.id, body: replyTo.body, sender: replyTo.sender, outgoing: replyTo.outgoing }
@@ -292,12 +298,18 @@ export const useStore = create<StoreState>((set, get) => ({
     void get().refreshChats();
   },
 
-  sendMedia: async (file: Blob, contentType: string, text: string, previewUrl?: string) => {
+  sendMedia: async (
+    file: Blob,
+    contentType: string,
+    text: string,
+    previewUrl?: string,
+    forceChatId?: string
+  ) => {
     const { selectedChat, messages, chats } = get();
     const body = text.trim();
     if (!selectedChat) return;
     void get().markRead(selectedChat);
-    const targetChatId = resolveTargetChat(get());
+    const targetChatId = resolveTargetChat(get(), forceChatId);
     const chat = chats.find((c) => c.id === targetChatId);
     const now = Date.now();
     const optId = `opt-mms-${now}-${Math.random().toString(36).slice(2, 6)}`;
@@ -493,7 +505,8 @@ function memberChatIds(s: StoreState): string[] {
 }
 
 /** Where an outgoing message should go for the current selection. */
-function resolveTargetChat(s: StoreState): string {
+function resolveTargetChat(s: StoreState, override?: string): string {
+  if (override) return override;
   const sel = s.selectedChat ?? '';
   const person = isPersonSelection(sel)
     ? s.people.find((p) => `person:${p.id}` === sel)

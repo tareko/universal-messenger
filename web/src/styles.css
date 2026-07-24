@@ -700,3 +700,26 @@ body {
 
 .msg-status.failed { color: var(--danger); }
 .msg-status.failed .msg-status-glyph { font-size: 13px; }
+
+/* ---------- Split send button (service picker) ---------- */
+.send-wrap { position: relative; display: flex; align-items: stretch; }
+.send-btn.split { border-radius: 8px 0 0 8px; }
+.send-caret {
+  background: var(--accent); color: #fff; border: none;
+  border-radius: 0 8px 8px 0; padding: 0 8px; cursor: pointer;
+  border-left: 1px solid rgba(255, 255, 255, 0.35); font-size: 13px;
+}
+.send-caret:hover { background: var(--accent-2); }
+.send-target-menu {
+  position: absolute; bottom: calc(100% + 6px); right: 0; z-index: 40;
+  background: #fff; border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.18); min-width: 220px; padding: 4px;
+}
+.send-target-row {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 8px 10px; border: none; background: transparent;
+  font-size: 13px; cursor: pointer; border-radius: 6px; text-align: left;
+}
+.send-target-row:hover { background: var(--panel-2); }
+.send-target-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.send-target-check { color: var(--accent); font-weight: 700; }
