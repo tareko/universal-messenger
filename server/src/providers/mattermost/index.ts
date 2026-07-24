@@ -611,9 +611,20 @@ export class MattermostProvider implements Provider {
 
   async send(chat: Chat, payload: SendPayload): Promise<SendResult> {
     if (!this.accountId || this.state !== 'open') throw new Error('mattermost not connected');
-    const rootId = payload.quotedId
+    // Mattermost threads are flat: root_id must be the THREAD ROOT, never
+    // another reply. Resolve our quote chain to the top-level post.
+    let rootId = payload.quotedId
       ? payload.quotedId.slice(`${this.accountId}:`.length)
       : undefined;
+    if (rootId && payload.quotedId) {
+      let cursor: string | null | undefined = payload.quotedId;
+      for (let i = 0; i < 5 && cursor; i++) {
+        const target: Message | null = getMessage(cursor);
+        if (!target?.quotedId) break;
+        cursor = target.quotedId;
+        rootId = cursor.slice(`${this.accountId}:`.length);
+      }
+    }
 
     const m = payload.media?.[0];
     let fileIds: string[] | undefined;
@@ -643,6 +654,10 @@ export class MattermostProvider implements Provider {
         file_ids: fileIds,
       });
     } catch (e) {
+      console.error(
+        `[mattermost] POST /posts failed: channel=${chat.remoteId} root_id=${rootId ?? 'none'}:`,
+        (e as Error).message
+      );
       // Safety net: an invalid root_id (cross-channel post, server-side
       // deletion) retries once as a plain message rather than failing.
       if (rootId && /rootid/i.test((e as Error).message)) {
