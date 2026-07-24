@@ -723,3 +723,5 @@ body {
 .send-target-row:hover { background: var(--panel-2); }
 .send-target-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .send-target-check { color: var(--accent); font-weight: 700; }
+
+.send-target-badge { margin-left: 6px; color: #fff; border-color: rgba(255,255,255,0.5); }

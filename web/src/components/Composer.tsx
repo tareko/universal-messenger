@@ -381,6 +381,13 @@ export function Composer() {
             onClick={() => void submit()}
           >
             Send
+            {targetOverride && (
+              <span className="provider-badge send-target-badge">
+                {providerBadge(
+                  memberChats.find((c) => c.id === targetOverride)?.provider ?? ''
+                )}
+              </span>
+            )}
           </button>
           {memberChats.length > 1 && (
             <>
