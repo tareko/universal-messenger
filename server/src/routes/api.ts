@@ -400,6 +400,28 @@ api.post('/chats', (req, res) => {
   res.json({ ok: true, chatId: chat.id });
 });
 
+/** Build the "> quoted text" fallback body for cross-provider/unsupported quotes. */
+function withQuoteFallback(
+  message: string,
+  quotedId: string | undefined,
+  accountId: string,
+  supportsNativeReply: boolean
+): { body: string; quotedId?: string } {
+  if (!quotedId) return { body: message };
+  const target = getMessage(quotedId);
+  if (target && target.accountId === accountId && supportsNativeReply) {
+    return { body: message, quotedId };
+  }
+  if (!target) return { body: message };
+  const author = target.outgoing === 1 ? 'You' : (target.senderName ?? target.sender ?? '');
+  const quotedLines = (target.body || '📎 Attachment')
+    .split('\n')
+    .map((l) => `> ${l}`)
+    .join('\n');
+  const header = author ? `> ${author}:\n` : '';
+  return { body: `${header}${quotedLines}\n\n${message}` };
+}
+
 api.post('/send', async (req, res) => {
   try {
     const { chatId, message, quotedId } = req.body as {
@@ -413,7 +435,10 @@ api.post('/send', async (req, res) => {
     const provider = providerForAccount(chat.accountId);
     if (!provider) return res.status(400).json({ error: 'no provider for account' });
 
-    const result = await provider.send(chat, { body: message, quotedId });
+    // Quoting is only native within the same account. Cross-provider quotes
+    // (and providers without replies, e.g. SMS) fall back to "> quoted text".
+    const q = withQuoteFallback(message, quotedId, chat.accountId, provider.capabilities.reply);
+    const result = await provider.send(chat, { body: q.body, quotedId: q.quotedId });
     res.json({ ok: true, id: result.id ? `${chat.accountId}:${result.id}` : '' });
   } catch (err) {
     console.error('[api] send failed:', (err as Error).message);
@@ -441,8 +466,15 @@ api.post('/send-media', upload.single('media'), async (req, res) => {
       return res.status(400).json({ error: 'provider does not support attachments' });
     }
 
+    const q = withQuoteFallback(
+      message,
+      req.body?.quotedId ? String(req.body.quotedId) : undefined,
+      chat.accountId,
+      provider.capabilities.reply
+    );
     const result = await provider.send(chat, {
-      body: message,
+      body: q.body,
+      quotedId: q.quotedId,
       media: [{ data: file.buffer.toString('base64'), contentType: file.mimetype }],
     });
     res.json({ ok: true, id: result.id ? `${chat.accountId}:${result.id}` : '' });

@@ -110,7 +110,14 @@ export const useStore = create<StoreState>((set, get) => ({
       selectedChat: chatId,
       replyTo: null,
       hasOlder: true,
-      messages: [],
+      // Keep failed/in-flight bubbles for this chat so they survive switching.
+      messages: get().messages.filter(
+        (m) =>
+          (m.status === 'failed' || m.status === 'sending') &&
+          (isPersonSelection(chatId)
+            ? (get().people.find((p) => `person:${p.id}` === chatId)?.chatIds ?? []).includes(m.chatId)
+            : m.chatId === chatId)
+      ),
       messagesLoaded: false,
       unreadAtOpen: unread,
     });
@@ -279,7 +286,7 @@ export const useStore = create<StoreState>((set, get) => ({
       const res = await api.send(targetChatId, body, quoted?.id);
       patchMessage(set, optId, { id: res.id || optId, status: 'sent' });
     } catch (e) {
-      patchMessage(set, optId, { status: 'failed' });
+      patchMessage(set, optId, { status: 'failed', error: (e as Error).message });
       set({ error: (e as Error).message });
     }
     void get().refreshChats();
@@ -314,21 +321,22 @@ export const useStore = create<StoreState>((set, get) => ({
       const res = await api.sendMedia(targetChatId, body, file, contentType);
       patchMessage(set, optId, { id: res.id || optId, status: 'sent' });
     } catch (e) {
-      patchMessage(set, optId, { status: 'failed' });
+      patchMessage(set, optId, { status: 'failed', error: (e as Error).message });
       set({ error: (e as Error).message });
     }
     void get().refreshChats();
   },
 
   retryText: async (id: string, text: string) => {
-    patchMessage(set, id, { status: 'sending' });
-    const { selectedChat } = get();
-    if (!selectedChat) return;
+    patchMessage(set, id, { status: 'sending', error: undefined });
+    const msg = get().messages.find((m) => m.id === id);
+    const target = msg?.chatId ?? get().selectedChat;
+    if (!target) return;
     try {
-      const res = await api.send(selectedChat, text);
-      patchMessage(set, id, { id: res.id || id, status: 'sent' });
+      const res = await api.send(target, text);
+      patchMessage(set, id, { id: res.id || id, status: 'sent', error: undefined });
     } catch (e) {
-      patchMessage(set, id, { status: 'failed' });
+      patchMessage(set, id, { status: 'failed', error: (e as Error).message });
       set({ error: (e as Error).message });
     }
     void get().refreshChats();

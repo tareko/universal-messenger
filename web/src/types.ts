@@ -58,6 +58,8 @@ export interface Message {
     deleted?: number;
   } | null;
   status?: 'sending' | 'sent' | 'failed'; // client-only outgoing state
+  /** Failure reason when status === 'failed' (shown in tooltip/retry). */
+  error?: string;
 }
 
 export interface Chat {

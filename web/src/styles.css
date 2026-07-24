@@ -697,3 +697,6 @@ body {
   display: flex; align-items: center; gap: 8px;
   font-size: 13px; padding: 4px 0; cursor: pointer;
 }
+
+.msg-status.failed { color: var(--danger); }
+.msg-status.failed .msg-status-glyph { font-size: 13px; }

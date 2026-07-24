@@ -21,7 +21,7 @@ export function MessageStatus({
     icon === 'sending'
       ? 'Sending… (clock = still sending)'
       : icon === 'failed'
-        ? 'Failed to send (click to retry)'
+        ? `Failed to send${msg.error ? `: ${msg.error}` : ''} (click to retry)`
         : 'Sent (single check = sent)';
 
   const clickable = icon === 'failed' && onRetry && !msg.media?.length;
