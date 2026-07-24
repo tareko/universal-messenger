@@ -633,12 +633,30 @@ export class MattermostProvider implements Provider {
       fileIds = data.file_infos.map((f) => f.id);
     }
 
-    const post = await this.rest<MmPost>('POST', '/posts', {
-      channel_id: chat.remoteId,
-      message: payload.body,
-      root_id: rootId,
-      file_ids: fileIds,
-    });
+    let post: MmPost;
+    let usedRootId: string | undefined = rootId;
+    try {
+      post = await this.rest<MmPost>('POST', '/posts', {
+        channel_id: chat.remoteId,
+        message: payload.body,
+        root_id: rootId,
+        file_ids: fileIds,
+      });
+    } catch (e) {
+      // Safety net: an invalid root_id (cross-channel post, server-side
+      // deletion) retries once as a plain message rather than failing.
+      if (rootId && /rootid/i.test((e as Error).message)) {
+        console.warn('[mattermost] invalid root_id — retrying without quote');
+        usedRootId = undefined;
+        post = await this.rest<MmPost>('POST', '/posts', {
+          channel_id: chat.remoteId,
+          message: payload.body,
+          file_ids: fileIds,
+        });
+      } else {
+        throw e;
+      }
+    }
 
     await ingest(
       {
@@ -650,7 +668,7 @@ export class MattermostProvider implements Provider {
         outgoing: true,
         body: payload.body,
         media: m ? [saveUploadedMedia(Buffer.from(m.data, 'base64'), m.contentType)] : undefined,
-        quotedRemoteId: rootId,
+        quotedRemoteId: usedRootId,
         forwardedFrom: payload.forwardedFrom,
       },
       'send'

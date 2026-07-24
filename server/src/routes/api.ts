@@ -404,12 +404,15 @@ api.post('/chats', (req, res) => {
 function withQuoteFallback(
   message: string,
   quotedId: string | undefined,
+  chatId: string,
   accountId: string,
   supportsNativeReply: boolean
 ): { body: string; quotedId?: string } {
   if (!quotedId) return { body: message };
   const target = getMessage(quotedId);
-  if (target && target.accountId === accountId && supportsNativeReply) {
+  // Native quoting requires same account AND same channel (Mattermost
+  // rejects root_id for posts in other channels; deleted posts fail too).
+  if (target && target.accountId === accountId && target.chatId === chatId && supportsNativeReply) {
     return { body: message, quotedId };
   }
   if (!target) return { body: message };
@@ -437,7 +440,7 @@ api.post('/send', async (req, res) => {
 
     // Quoting is only native within the same account. Cross-provider quotes
     // (and providers without replies, e.g. SMS) fall back to "> quoted text".
-    const q = withQuoteFallback(message, quotedId, chat.accountId, provider.capabilities.reply);
+    const q = withQuoteFallback(message, quotedId, chatId, chat.accountId, provider.capabilities.reply);
     const result = await provider.send(chat, { body: q.body, quotedId: q.quotedId });
     res.json({ ok: true, id: result.id ? `${chat.accountId}:${result.id}` : '' });
   } catch (err) {
@@ -469,6 +472,7 @@ api.post('/send-media', upload.single('media'), async (req, res) => {
     const q = withQuoteFallback(
       message,
       req.body?.quotedId ? String(req.body.quotedId) : undefined,
+      chatId,
       chat.accountId,
       provider.capabilities.reply
     );
