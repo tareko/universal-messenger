@@ -1,0 +1,783 @@
+import Database from 'better-sqlite3';
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { config } from '../config.js';
+import type { Chat, Contact, MediaRef, Message, ReactionRef } from '../types.js';
+
+let db: Database.Database;
+
+export function initDb() {
+  mkdirSync(dirname(config.dbPath), { recursive: true });
+  db = new Database(config.dbPath);
+  db.pragma('journal_mode = WAL');
+  db.pragma('foreign_keys = ON');
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS accounts (
+      id        TEXT PRIMARY KEY,   -- '<provider>:<remote-id>'
+      provider  TEXT NOT NULL,
+      label     TEXT NOT NULL,
+      status    TEXT NOT NULL DEFAULT 'active',
+      sort      INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS chats (
+      id          TEXT PRIMARY KEY, -- '<accountId>:<remoteId>'
+      account_id  TEXT NOT NULL REFERENCES accounts(id),
+      type        TEXT NOT NULL DEFAULT 'dm',  -- 'dm' | 'group'
+      remote_id   TEXT NOT NULL,               -- contact tel / group id
+      contact_raw TEXT NOT NULL DEFAULT '',
+      title       TEXT,
+      created     INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_chats_account ON chats(account_id);
+
+    CREATE TABLE IF NOT EXISTS messages (
+      id            TEXT PRIMARY KEY, -- '<accountId>:<provider-msg-id>'
+      chat_id       TEXT NOT NULL REFERENCES chats(id),
+      account_id    TEXT NOT NULL,
+      ts            INTEGER NOT NULL,
+      date          TEXT NOT NULL DEFAULT '',
+      outgoing      INTEGER NOT NULL, -- 0 incoming, 1 outgoing
+      sender        TEXT,             -- group sender (null for dm/own)
+      body          TEXT NOT NULL,
+      media         TEXT,             -- JSON MediaRef[]
+      quoted_id     TEXT,
+      forwarded_from TEXT,
+      edited        INTEGER NOT NULL DEFAULT 0,
+      read          INTEGER NOT NULL DEFAULT 0,
+      source        TEXT NOT NULL DEFAULT 'poll',
+      carrier_status TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_msg_chat ON messages(chat_id, ts);
+    CREATE INDEX IF NOT EXISTS idx_msg_ts ON messages(ts);
+
+    CREATE TABLE IF NOT EXISTS reactions (
+      id         TEXT PRIMARY KEY,  -- provider id of the reaction event
+      message_id TEXT,              -- matched target message (nullable)
+      chat_id    TEXT NOT NULL,
+      emoji      TEXT NOT NULL,
+      from_sender TEXT,
+      ts         INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_react_chat ON reactions(chat_id);
+    CREATE INDEX IF NOT EXISTS idx_react_target ON reactions(message_id);
+
+    CREATE TABLE IF NOT EXISTS contacts (
+      tel     TEXT PRIMARY KEY,
+      name    TEXT NOT NULL,
+      raw_tel TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS kv (
+      key   TEXT PRIMARY KEY,
+      value TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS names (
+      id   TEXT PRIMARY KEY,  -- '+15551234567' (phone), telegram user id, ...
+      name TEXT NOT NULL      -- display name (pushname, telegram name, ...)
+    );
+
+    CREATE TABLE IF NOT EXISTS push_endpoints (
+      endpoint TEXT PRIMARY KEY,
+      created  INTEGER NOT NULL
+    );
+  `);
+
+  // Full-text search index over message bodies (external-content FTS5).
+  db.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+      body, content='messages', content_rowid='rowid'
+    );
+    CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+      INSERT INTO messages_fts(rowid, body) VALUES (new.rowid, new.body);
+    END;
+    CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
+      INSERT INTO messages_fts(messages_fts, rowid, body) VALUES('delete', old.rowid, old.body);
+    END;
+    CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
+      INSERT INTO messages_fts(messages_fts, rowid, body) VALUES('delete', old.rowid, old.body);
+      INSERT INTO messages_fts(rowid, body) VALUES (new.rowid, new.body);
+    END;
+  `);
+  // Backfill the index if it's behind (e.g. after an upgrade import).
+  const behind = db
+    .prepare(
+      `SELECT (SELECT COUNT(*) FROM messages) > (SELECT COUNT(*) FROM messages_fts) AS behind`
+    )
+    .get() as { behind: number };
+  if (behind.behind) {
+    db.prepare(`INSERT INTO messages_fts(messages_fts) VALUES('rebuild')`).run();
+    console.log('[db] rebuilt full-text index');
+  }
+  // Lazy media: provider payload needed to download an attachment on demand.
+  try {
+    db.exec('ALTER TABLE messages ADD COLUMN media_pending TEXT');
+  } catch {
+    /* column exists */
+  }
+  // Disappearing messages: per-chat ephemeral duration (seconds; 0 = off).
+  try {
+    db.exec('ALTER TABLE chats ADD COLUMN ephemeral_seconds INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    /* column exists */
+  }
+  // WhatsApp newsletters predating the 'channel' chat type were stored as dms.
+  db.exec(`UPDATE chats SET type = 'channel' WHERE remote_id LIKE '%@newsletter' AND type != 'channel'`);
+  // Delete-for-everyone tombstones (body/media blanked, row kept as a stub).
+  try {
+    db.exec('ALTER TABLE messages ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    /* column exists */
+  }
+  return db;
+}
+
+export function getDb() {
+  if (!db) throw new Error('DB not initialised');
+  return db;
+}
+
+// ---------- KV ----------
+export function getKv(key: string): string | undefined {
+  const row = getDb().prepare('SELECT value FROM kv WHERE key = ?').get(key) as
+    | { value: string }
+    | undefined;
+  return row?.value;
+}
+export function setKv(key: string, value: string): void {
+  getDb()
+    .prepare('INSERT INTO kv(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+    .run(key, value);
+}
+
+// ---------- names (provider-captured display names) ----------
+export function setName(id: string, name: string): void {
+  if (!id || !name) return;
+  getDb()
+    .prepare(
+      `INSERT INTO names(id, name) VALUES(?, ?)
+       ON CONFLICT(id) DO UPDATE SET name = excluded.name`
+    )
+    .run(id, name);
+}
+
+/** Provider-captured name first, then the CardDAV address book. */
+export function getName(id: string): string | null {
+  const row = getDb().prepare('SELECT name FROM names WHERE id = ?').get(id) as
+    | { name: string }
+    | undefined;
+  return row?.name ?? getContactName(id);
+}
+
+/** Rewrite a stored group sender id (e.g. a resolved WhatsApp lid → phone). */
+export function rewriteSender(accountId: string, from: string, to: string): void {
+  getDb()
+    .prepare('UPDATE messages SET sender = ? WHERE account_id = ? AND sender = ?')
+    .run(to, accountId, from);
+  getDb().prepare('UPDATE reactions SET from_sender = ? WHERE from_sender = ?').run(to, from);
+}
+
+/** Replace a text fragment in stored message bodies (mention display fixes). */
+export function rewriteBodyFragment(from: string, to: string): number {
+  const res = getDb()
+    .prepare('UPDATE messages SET body = REPLACE(body, ?, ?) WHERE body LIKE ?')
+    .run(from, to, `%${from}%`);
+  return res.changes;
+}
+
+// ---------- accounts ----------
+export function upsertAccount(a: { id: string; provider: string; label: string; status?: string }): void {
+  getDb()
+    .prepare(
+      `INSERT INTO accounts(id, provider, label, status) VALUES(?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET label = excluded.label`
+    )
+    .run(a.id, a.provider, a.label, a.status ?? 'active');
+}
+
+export function setAccountStatus(id: string, status: string): void {
+  getDb().prepare('UPDATE accounts SET status = ? WHERE id = ?').run(status, id);
+}
+
+/**
+ * Mark all of a provider's accounts with a status (e.g. 'disconnected' on
+ * logout). Chat history is intentionally kept, so rows aren't deleted.
+ */
+export function setProviderAccountsStatus(provider: string, status: string): void {
+  getDb().prepare('UPDATE accounts SET status = ? WHERE provider = ?').run(status, provider);
+}
+
+export function getAccounts(): { id: string; provider: string; label: string; status: string }[] {
+  const rows = getDb()
+    .prepare('SELECT id, provider, label, status FROM accounts ORDER BY sort, label')
+    .all() as Record<string, unknown>[];
+  return rows.map((r) => ({
+    id: String(r.id),
+    provider: String(r.provider),
+    label: String(r.label),
+    status: String(r.status),
+  }));
+}
+
+// ---------- chats ----------
+export function chatId(accountId: string, remoteId: string): string {
+  return `${accountId}:${remoteId}`;
+}
+
+export function getOrCreateChat(
+  accountId: string,
+  remoteId: string,
+  opts: { type?: string; contactRaw?: string; title?: string } = {}
+): Chat {
+  const id = chatId(accountId, remoteId);
+  getDb()
+    .prepare(
+      `INSERT INTO chats(id, account_id, type, remote_id, contact_raw, title, created)
+       VALUES(?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO NOTHING`
+    )
+    .run(id, accountId, opts.type ?? 'dm', remoteId, opts.contactRaw ?? remoteId, opts.title ?? null, Date.now());
+  return getChat(id)!;
+}
+
+export function getChat(id: string): Chat | null {
+  const row = getDb().prepare('SELECT * FROM chats WHERE id = ?').get(id) as
+    | Record<string, unknown>
+    | undefined;
+  return row ? rowToChat(row) : null;
+}
+
+/**
+ * Fold `sourceId` chat into `targetId` (creating the target from the source's
+ * metadata if needed). Messages/reactions are moved; exact duplicates
+ * (same message id in both) are dropped with the source. Used when a
+ * privacy-masked id (WhatsApp @lid) resolves to a real phone number and the
+ * two ended up as separate chats.
+ */
+export function mergeChats(sourceId: string, targetId: string): void {
+  const source = getChat(sourceId);
+  if (!source || sourceId === targetId) return;
+  const account = sourceId.split(':').slice(0, 2).join(':');
+  const targetRemoteId = targetId.slice(account.length + 1);
+  const tx = getDb().transaction(() => {
+    if (!getChat(targetId)) {
+      getDb()
+        .prepare(
+          `INSERT INTO chats(id, account_id, type, remote_id, contact_raw, title, created)
+           SELECT ?, account_id, type, ?, contact_raw, title, created FROM chats WHERE id = ?`
+        )
+        .run(targetId, targetRemoteId, sourceId);
+    }
+    // Prefer a real name as the display label over a raw number/lid.
+    const target = getChat(targetId)!;
+    if (/[a-zA-Z]/.test(source.contactRaw) && !/[a-zA-Z]/.test(target.contactRaw)) {
+      getDb().prepare('UPDATE chats SET contact_raw = ? WHERE id = ?').run(source.contactRaw, targetId);
+    }
+    // Preserve a disappearing-messages setting the target doesn't know yet.
+    getDb()
+      .prepare(
+        `UPDATE chats SET ephemeral_seconds = ?
+         WHERE id = ? AND ephemeral_seconds = 0 AND ? > 0`
+      )
+      .run(source.ephemeralSeconds ?? 0, targetId, source.ephemeralSeconds ?? 0);
+    getDb().prepare('UPDATE OR IGNORE messages SET chat_id = ? WHERE chat_id = ?').run(targetId, sourceId);
+    getDb().prepare('UPDATE OR IGNORE reactions SET chat_id = ? WHERE chat_id = ?').run(targetId, sourceId);
+    // Anything left behind collided with an existing row — drop it.
+    getDb().prepare('DELETE FROM messages WHERE chat_id = ?').run(sourceId);
+    getDb().prepare('DELETE FROM reactions WHERE chat_id = ?').run(sourceId);
+    getDb().prepare('DELETE FROM chats WHERE id = ?').run(sourceId);
+  });
+  tx();
+  console.log(`[db] merged chat ${sourceId} → ${targetId}`);
+}
+
+/** Delete all chats (and their messages/reactions) of one type for an account. */
+export function purgeChats(accountId: string, type: 'dm' | 'group'): number {
+  const ids = getDb()
+    .prepare('SELECT id FROM chats WHERE account_id = ? AND type = ?')
+    .all(accountId, type) as { id: string }[];
+  const delMsgs = getDb().prepare('DELETE FROM messages WHERE chat_id = ?');
+  const delReacts = getDb().prepare('DELETE FROM reactions WHERE chat_id = ?');
+  const delChat = getDb().prepare('DELETE FROM chats WHERE id = ?');
+  const tx = getDb().transaction((rows: { id: string }[]) => {
+    for (const r of rows) {
+      delMsgs.run(r.id);
+      delReacts.run(r.id);
+      delChat.run(r.id);
+    }
+    return rows.length;
+  });
+  return tx(ids);
+}
+
+function rowToChat(r: Record<string, unknown>): Chat {
+  const rawType = String(r.type);
+  return {
+    id: String(r.id),
+    accountId: String(r.account_id),
+    provider: String(r.account_id).split(':')[0],
+    type: (rawType === 'group' || rawType === 'channel' ? rawType : 'dm') as Chat['type'],
+    remoteId: String(r.remote_id),
+    contactRaw: r.contact_raw ? String(r.contact_raw) : '',
+    title: r.title ? String(r.title) : null,
+    name: r.name !== undefined && r.name !== null ? String(r.name) : null,
+    unread: r.unread !== undefined ? Number(r.unread) : 0,
+    ts: r.ts !== undefined ? Number(r.ts) : 0,
+    ephemeralSeconds: Number(r.ephemeral_seconds ?? 0),
+  };
+}
+
+/** Record a chat's disappearing-messages duration (seconds; 0 = off). */
+export function setChatEphemeral(chatIdArg: string, seconds: number): void {
+  getDb().prepare('UPDATE chats SET ephemeral_seconds = ? WHERE id = ?').run(seconds, chatIdArg);
+}
+
+/**
+ * Chat list across one or all accounts: last message per chat + unread count,
+ * with the address-book name resolved for dm chats. Chats with no messages are
+ * hidden unless they're DMs (a freshly-created dm may legitimately be empty;
+ * empty groups from provider syncs are just noise).
+ */
+export function getChats(accountId?: string): Chat[] {
+  const where = accountId
+    ? "WHERE c.account_id = ? AND (m.id IS NOT NULL OR c.type = 'dm')"
+    : "WHERE (m.id IS NOT NULL OR c.type = 'dm')";
+  const args: unknown[] = accountId ? [accountId] : [];
+  const rows = getDb()
+    .prepare(
+      `SELECT c.*, ct.name,
+              m.ts AS ts, m.id AS last_id,
+              (SELECT COUNT(*) FROM messages u WHERE u.chat_id = c.id AND u.outgoing = 0 AND u.read = 0) AS unread
+       FROM chats c
+       LEFT JOIN contacts ct ON ct.tel = c.remote_id
+       LEFT JOIN messages m ON m.chat_id = c.id
+         AND m.ts = (SELECT MAX(m2.ts) FROM messages m2 WHERE m2.chat_id = c.id)
+       ${where}
+       GROUP BY c.id
+       ORDER BY ts DESC NULLS LAST, c.created DESC`
+    )
+    .all(...args) as Record<string, unknown>[];
+  return rows.map((r) => {
+    const chat = rowToChat(r);
+    const last = r.last_id
+      ? getMessage(String(r.last_id))
+      : latestMessageForChat(chat.id);
+    chat.lastMessage = last ?? undefined;
+    return chat;
+  });
+}
+
+function latestMessageForChat(chatId: string): Message | null {
+  const row = getDb()
+    .prepare('SELECT * FROM messages WHERE chat_id = ? ORDER BY ts DESC LIMIT 1')
+    .get(chatId) as Record<string, unknown> | undefined;
+  return row ? rowToMessage(row) : null;
+}
+
+// ---------- messages ----------
+function parseMedia(raw: unknown): MediaRef[] | undefined {
+  if (typeof raw !== 'string' || !raw) return undefined;
+  try {
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr) && arr.length) return arr as MediaRef[];
+  } catch {
+    /* malformed */
+  }
+  return undefined;
+}
+
+function rowToMessage(r: Record<string, unknown>): Message {
+  return {
+    id: String(r.id),
+    chatId: String(r.chat_id),
+    accountId: String(r.account_id),
+    ts: Number(r.ts),
+    date: r.date ? String(r.date) : '',
+    outgoing: Number(r.outgoing) as Message['outgoing'],
+    sender: r.sender ? String(r.sender) : null,
+    body: String(r.body),
+    carrierStatus: r.carrier_status ? String(r.carrier_status) : '',
+    read: Number(r.read),
+    media: parseMedia(r.media),
+    mediaPending: Boolean(r.media_pending),
+    deleted: Number(r.deleted ?? 0),
+    quotedId: r.quoted_id ? String(r.quoted_id) : null,
+    forwardedFrom: r.forwarded_from ? String(r.forwarded_from) : null,
+    edited: Number(r.edited ?? 0),
+  };
+}
+
+export function messageExists(id: string): boolean {
+  return Boolean(getDb().prepare('SELECT 1 FROM messages WHERE id = ?').get(id));
+}
+
+/**
+ * Content-based duplicate check. voip.ms expands a group MMS into one row per
+ * "leg" (same sender + body + timestamp, different ids); dedup by content so we
+ * don't show the same bubble twice. A human re-sending identical text would
+ * have a different second-precision timestamp, so this is safe.
+ */
+export function isDuplicateMessage(chatId: string, body: string, ts: number): boolean {
+  return Boolean(
+    getDb()
+      .prepare('SELECT 1 FROM messages WHERE chat_id = ? AND body = ? AND ts = ? LIMIT 1')
+      .get(chatId, body, ts)
+  );
+}
+
+/** Remove existing duplicate bubbles (keeps the first of each content group). */
+export function dedupMessages(): number {
+  const res = getDb()
+    .prepare(
+      `DELETE FROM messages WHERE rowid NOT IN (
+         SELECT MIN(rowid) FROM messages GROUP BY chat_id, body, ts
+       )`
+    )
+    .run();
+  return res.changes;
+}
+
+/** Insert a message; returns true if it was new. */
+export function insertMessage(
+  msg: Message,
+  source: 'poll' | 'webhook' | 'send' = 'poll',
+  mediaPending?: string
+): boolean {
+  const res = getDb()
+    .prepare(
+      `INSERT INTO messages(id, chat_id, account_id, ts, date, outgoing, sender, body, media, quoted_id, forwarded_from, read, source, carrier_status, media_pending)
+       VALUES(@id, @chatId, @accountId, @ts, @date, @outgoing, @sender, @body, @media, @quotedId, @forwardedFrom, @read, @source, @carrierStatus, @mediaPending)
+       ON CONFLICT(id) DO NOTHING`
+    )
+    .run({
+      id: msg.id,
+      chatId: msg.chatId,
+      accountId: msg.accountId,
+      ts: msg.ts,
+      date: msg.date ?? '',
+      outgoing: msg.outgoing,
+      sender: msg.sender ?? null,
+      body: msg.body,
+      media: msg.media ? JSON.stringify(msg.media) : null,
+      quotedId: msg.quotedId ?? null,
+      forwardedFrom: msg.forwardedFrom ?? null,
+      read: msg.read ?? 0,
+      source,
+      carrierStatus: msg.carrierStatus ?? '',
+      mediaPending: mediaPending ?? null,
+    });
+  return res.changes > 0;
+}
+
+/** Raw lazy-download payload for a message (null when none). */
+export function getMediaPending(id: string): string | null {
+  const row = getDb().prepare('SELECT media_pending FROM messages WHERE id = ?').get(id) as
+    | { media_pending: string | null }
+    | undefined;
+  return row?.media_pending ?? null;
+}
+
+/** Backfill the lazy-download payload on an already-stored message (re-sync). */
+export function fillMediaPending(id: string, payload: string): void {
+  getDb()
+    .prepare('UPDATE messages SET media_pending = ? WHERE id = ? AND media IS NULL AND media_pending IS NULL')
+    .run(payload, id);
+}
+
+/** Store freshly-downloaded media and clear the pending marker. */
+export function updateMessageMedia(id: string, media: MediaRef[]): void {
+  getDb()
+    .prepare('UPDATE messages SET media = ?, media_pending = NULL WHERE id = ?')
+    .run(JSON.stringify(media), id);
+}
+
+export function getMessages(chatIdArg: string, limit = 100, before?: number): Message[] {
+  // Most recent page first (DESC), then re-sort ascending for display.
+  const rows = (
+    before !== undefined
+      ? getDb()
+          .prepare('SELECT * FROM messages WHERE chat_id = ? AND ts < ? ORDER BY ts DESC LIMIT ?')
+          .all(chatIdArg, before, limit)
+      : getDb()
+          .prepare('SELECT * FROM messages WHERE chat_id = ? ORDER BY ts DESC LIMIT ?')
+          .all(chatIdArg, limit)
+  ) as Record<string, unknown>[];
+  const messages = rows.map(rowToMessage).reverse();
+  return hydrateExtras(messages, chatIdArg);
+}
+
+/** Oldest stored message in a chat (provider-side pagination anchor). */
+export function getOldestMessage(chatIdArg: string): Message | null {
+  const row = getDb()
+    .prepare('SELECT * FROM messages WHERE chat_id = ? ORDER BY ts ASC LIMIT 1')
+    .get(chatIdArg) as Record<string, unknown> | undefined;
+  return row ? rowToMessage(row) : null;
+}
+
+export interface SearchHit {
+  message: Message;
+  chatId: string;
+  chatName: string | null;
+}
+
+/** Full-text search across all message bodies, newest first. */
+export function searchMessages(query: string, limit = 40): SearchHit[] {
+  // Quote each token for FTS5 safety (avoids syntax errors on user input).
+  const match = query
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((t) => `"${t.replace(/"/g, '""')}"`)
+    .join(' ');
+  if (!match) return [];
+  const rows = getDb()
+    .prepare(
+      `SELECT m.*, c.title AS chat_title, c.contact_raw AS chat_contact, ct.name AS contact_name
+       FROM messages_fts f
+       JOIN messages m ON m.rowid = f.rowid
+       JOIN chats c ON c.id = m.chat_id
+       LEFT JOIN contacts ct ON ct.tel = c.remote_id
+       WHERE messages_fts MATCH ?
+       ORDER BY m.ts DESC
+       LIMIT ?`
+    )
+    .all(match, limit) as Record<string, unknown>[];
+  return rows.map((r) => ({
+    message: rowToMessage(r),
+    chatId: String(r.chat_id),
+    chatName: r.contact_name ?? r.chat_title ?? r.chat_contact ?? null,
+  })) as SearchHit[];
+}
+
+export function markChatRead(chatIdArg: string): void {
+  getDb()
+    .prepare('UPDATE messages SET read = 1 WHERE chat_id = ? AND outgoing = 0 AND read = 0')
+    .run(chatIdArg);
+}
+
+export function getMessage(id: string): Message | null {
+  const row = getDb().prepare('SELECT * FROM messages WHERE id = ?').get(id) as
+    | Record<string, unknown>
+    | undefined;
+  if (!row) return null;
+  const [msg] = hydrateExtras([rowToMessage(row)], String(row.chat_id));
+  return msg;
+}
+
+export function deleteMessage(id: string): void {
+  getDb().prepare('DELETE FROM messages WHERE id = ?').run(id);
+  // Reactions pointing at the deleted message are orphaned; drop them.
+  getDb().prepare('DELETE FROM reactions WHERE message_id = ?').run(id);
+}
+
+/** Tombstone a message (delete-for-everyone): blank it, keep the row. */
+export function markMessageDeleted(id: string): void {
+  getDb()
+    .prepare("UPDATE messages SET deleted = 1, body = '', media = NULL, media_pending = NULL WHERE id = ?")
+    .run(id);
+  // Reactions on a deleted message no longer make sense.
+  getDb().prepare('DELETE FROM reactions WHERE message_id = ?').run(id);
+}
+
+/**
+ * Find messages whose provider-local id ends with a suffix (e.g. Telegram msg
+ * ids are only unique per chat, so delete events must be resolved by suffix).
+ */
+export function findMessageIdsBySuffix(accountId: string, suffix: string): { id: string; chat_id: string }[] {
+  return getDb()
+    .prepare(`SELECT id, chat_id FROM messages WHERE account_id = ? AND id LIKE ? ESCAPE '\\'`)
+    .all(accountId, `%:${suffix.replace(/[%_]/g, (m) => '\\' + m)}`) as { id: string; chat_id: string }[];
+}
+
+export function updateMessageBody(id: string, body: string): void {
+  getDb().prepare('UPDATE messages SET body = ?, edited = 1 WHERE id = ?').run(body, id);
+}
+
+/** Set a chat title (e.g. group subject) if we don't have one yet. */
+export function setChatTitleIfBlank(chatIdArg: string, title: string): void {
+  getDb()
+    .prepare('UPDATE chats SET title = ? WHERE id = ? AND (title IS NULL OR title = \'\')')
+    .run(title, chatIdArg);
+}
+
+/** Update a chat's display labels (e.g. a DM resolved to the other person's name). */
+export function setChatLabel(chatIdArg: string, label: string): void {
+  if (!label) return;
+  getDb()
+    .prepare('UPDATE chats SET title = ?, contact_raw = ? WHERE id = ?')
+    .run(label, label, chatIdArg);
+}
+
+/** Attach reactions, sender names, and quote previews to a list of messages. */
+function hydrateExtras(messages: Message[], chatIdArg: string): Message[] {
+  const byTarget = reactionsForChat(chatIdArg);
+  return messages.map((m) => {
+    let out = m;
+    const r = byTarget.get(m.id);
+    if (r && r.length) out = { ...out, reactions: r };
+    if (out.sender) {
+      const sn = getName(out.sender);
+      if (sn) out = { ...out, senderName: sn };
+    }
+    if (out.quotedId) {
+      const q = getMessageRaw(out.quotedId);
+      if (q) {
+        out = {
+          ...out,
+          quoted: {
+            id: q.id,
+            body: q.body,
+            sender: q.sender,
+            outgoing: q.outgoing,
+            senderName: q.sender ? getName(q.sender) : null,
+            deleted: q.deleted ?? 0,
+          },
+        };
+      }
+    }
+    return out;
+  });
+}
+
+function getMessageRaw(id: string): Message | null {
+  const row = getDb().prepare('SELECT * FROM messages WHERE id = ?').get(id) as
+    | Record<string, unknown>
+    | undefined;
+  return row ? rowToMessage(row) : null;
+}
+
+// ---------- reactions ----------
+export function reactionExists(id: string): boolean {
+  return Boolean(getDb().prepare('SELECT 1 FROM reactions WHERE id = ?').get(id));
+}
+
+export function getReactionEvent(id: string): { message_id: string | null } | undefined {
+  return getDb().prepare('SELECT message_id FROM reactions WHERE id = ?').get(id) as
+    | { message_id: string | null }
+    | undefined;
+}
+
+export function isDuplicateReaction(chatIdArg: string, emoji: string, ts: number): boolean {
+  return Boolean(
+    getDb()
+      .prepare('SELECT 1 FROM reactions WHERE chat_id = ? AND emoji = ? AND ts = ? LIMIT 1')
+      .get(chatIdArg, emoji, ts)
+  );
+}
+
+export function addReaction(ev: {
+  id: string;
+  messageId: string | null;
+  chatId: string;
+  emoji: string;
+  fromSender?: string;
+  ts: number;
+}): void {
+  getDb()
+    .prepare(
+      `INSERT INTO reactions(id, message_id, chat_id, emoji, from_sender, ts)
+       VALUES(?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET message_id = excluded.message_id, emoji = excluded.emoji`
+    )
+    .run(ev.id, ev.messageId, ev.chatId, ev.emoji, ev.fromSender ?? null, ev.ts);
+}
+
+export function getReactionsForMessage(id: string): ReactionRef[] {
+  const rows = getDb()
+    .prepare('SELECT emoji, from_sender FROM reactions WHERE message_id = ?')
+    .all(id) as { emoji: string; from_sender: string | null }[];
+  return rows.map((r) => ({ emoji: r.emoji, from: r.from_sender ?? undefined }));
+}
+
+/** Remove a reactor's reaction(s) from a message (emoji cleared on the provider). */
+export function removeReactions(messageId: string, fromSender: string): void {
+  getDb()
+    .prepare('DELETE FROM reactions WHERE message_id = ? AND from_sender = ?')
+    .run(messageId, fromSender);
+}
+
+/** Remove ALL reactions from a message (provider pushed a full replacement list). */
+export function clearReactions(messageId: string): void {
+  getDb().prepare('DELETE FROM reactions WHERE message_id = ?').run(messageId);
+}
+
+/** Remove duplicate reaction events (keeps the first of each group). */
+export function dedupReactionEvents(): number {
+  const res = getDb()
+    .prepare(
+      `DELETE FROM reactions WHERE rowid NOT IN (
+         SELECT MIN(rowid) FROM reactions GROUP BY chat_id, emoji, ts
+       )`
+    )
+    .run();
+  return res.changes;
+}
+
+function reactionsForChat(chatIdArg: string): Map<string, ReactionRef[]> {
+  const rows = getDb()
+    .prepare('SELECT message_id, emoji, from_sender FROM reactions WHERE chat_id = ? AND message_id IS NOT NULL')
+    .all(chatIdArg) as { message_id: string; emoji: string; from_sender: string | null }[];
+  const map = new Map<string, ReactionRef[]>();
+  for (const r of rows) {
+    const list = map.get(r.message_id) ?? [];
+    list.push({ emoji: r.emoji, from: r.from_sender ?? undefined });
+    map.set(r.message_id, list);
+  }
+  return map;
+}
+
+// ---------- contacts ----------
+/** Replace the entire contact set atomically (CardDAV sync is a full refresh). */
+export function upsertContacts(contacts: Contact[]): number {
+  const tx = getDb().transaction((items: Contact[]) => {
+    getDb().prepare(`DELETE FROM contacts`).run();
+    const stmt = getDb().prepare(
+      `INSERT INTO contacts(tel, name, raw_tel) VALUES(?, ?, ?)
+       ON CONFLICT(tel) DO UPDATE SET name = excluded.name, raw_tel = excluded.raw_tel`
+    );
+    for (const c of items) stmt.run(c.tel, c.name, c.rawTel ?? null);
+    return items.length;
+  });
+  return tx(contacts);
+}
+
+export function getContactName(tel: string): string | null {
+  const row = getDb().prepare(`SELECT name FROM contacts WHERE tel = ?`).get(tel) as
+    | { name: string }
+    | undefined;
+  return row?.name ?? null;
+}
+
+export function searchContacts(query: string, limit = 50): Contact[] {
+  const q = `%${query.replace(/[%_]/g, (m) => '\\' + m)}%`;
+  const rows = getDb()
+    .prepare(
+      `SELECT tel, name, raw_tel AS rawTel FROM contacts
+       WHERE name LIKE ? ESCAPE '\\' OR raw_tel LIKE ? ESCAPE '\\' OR tel LIKE ? ESCAPE '\\'
+       ORDER BY name COLLATE NOCASE LIMIT ?`
+    )
+    .all(q, q, q, limit) as Record<string, unknown>[];
+  return rows.map((r) => ({
+    tel: String(r.tel),
+    name: String(r.name),
+    rawTel: r.rawTel ? String(r.rawTel) : '',
+  }));
+}
+
+// ---------- push endpoints ----------
+export function registerPushEndpoint(endpoint: string): void {
+  getDb()
+    .prepare('INSERT INTO push_endpoints(endpoint, created) VALUES(?, ?) ON CONFLICT(endpoint) DO NOTHING')
+    .run(endpoint, Date.now());
+}
+
+export function unregisterPushEndpoint(endpoint: string): void {
+  getDb().prepare('DELETE FROM push_endpoints WHERE endpoint = ?').run(endpoint);
+}
+
+export function getPushEndpoints(): string[] {
+  const rows = getDb().prepare('SELECT endpoint FROM push_endpoints').all() as { endpoint: string }[];
+  return rows.map((r) => r.endpoint);
+}

@@ -1,0 +1,463 @@
+import { create } from 'zustand';
+import { api } from './api';
+import type { Account, AppStatus, Chat, Message } from './types';
+
+interface StoreState {
+  status: AppStatus | null;
+  sseStatus: 'connecting' | 'connected';
+  accounts: Account[];
+  /** 'all' or an account id — filters the chat list. */
+  selectedAccount: string;
+
+  chats: Chat[];
+  selectedChat: string | null; // chat id
+  messages: Message[];
+  replyTo: Message | null; // message being quoted in the composer
+  hasOlder: boolean; // more history available (DB or provider-side)
+  loadingOlder: boolean;
+  unreadAtOpen: number; // unread count captured when the chat was opened
+  /** True once the first message fetch for the open chat has completed. */
+  messagesLoaded: boolean;
+  /** chatId → who is typing there (auto-expires). */
+  typing: Record<string, { name: string | null; expiresAt: number }>;
+  /** Bumped on every send — the thread scrolls to the bottom when it changes. */
+  scrollNonce: number;
+
+  loading: boolean;
+  error: string | null;
+
+  init: () => Promise<void>;
+  selectAccount: (accountId: string) => Promise<void>;
+  selectChat: (chatId: string) => Promise<void>;
+  closeChat: () => void;
+  openNewChat: (to: string) => Promise<void>;
+  refreshChats: () => Promise<void>;
+  refreshMessages: () => Promise<void>;
+  loadOlderMessages: () => Promise<void>;
+  backfillHistory: () => Promise<{ newMessages: number; reachedLimit: boolean }>;
+  sendMessage: (text: string) => Promise<void>;
+  sendMedia: (file: Blob, contentType: string, text: string, previewUrl?: string) => Promise<void>;
+  retryText: (id: string, text: string) => Promise<void>;
+  reactMessage: (messageId: string, emoji: string) => Promise<void>;
+  forwardMessage: (messageId: string, targetChatId: string) => Promise<void>;
+  setReplyTo: (msg: Message | null) => void;
+  markRead: (chatId: string) => Promise<void>;
+  setStatus: (s: AppStatus) => void;
+  patchStatus: (p: { providers?: Record<string, string>; carddav?: string }) => void;
+  setAccounts: (a: Account[]) => void;
+  onMessage: (msg: Message) => Promise<void>;
+  onMessageUpdated: (msg: Message) => void;
+  onMessageDeleted: (id: string) => void;
+  onTyping: (data: { chatId: string; name: string | null; expiresAt: number }) => void;
+}
+
+export const useStore = create<StoreState>((set, get) => ({
+  status: null,
+  sseStatus: 'connecting',
+  accounts: [],
+  selectedAccount: 'all',
+  chats: [],
+  selectedChat: null,
+  messages: [],
+  replyTo: null,
+  hasOlder: true,
+  loadingOlder: false,
+  unreadAtOpen: 0,
+  messagesLoaded: false,
+  typing: {},
+  scrollNonce: 0,
+  loading: false,
+  error: null,
+
+  init: async () => {
+    set({ loading: true, error: null });
+    try {
+      const status = await api.status();
+      const accounts = status.accounts?.length ? status.accounts : await api.accounts();
+      set({ status, accounts, loading: false });
+      await get().refreshChats();
+    } catch (e) {
+      set({ loading: false, error: (e as Error).message });
+    }
+  },
+
+  selectAccount: async (accountId: string) => {
+    set({ selectedAccount: accountId });
+    await get().refreshChats();
+  },
+
+  selectChat: async (chatId: string) => {
+    // Capture the unread boundary BEFORE markRead zeroes it, so the thread
+    // can show an "N unread messages" divider and scroll to it.
+    const unread = get().chats.find((c) => c.id === chatId)?.unread ?? 0;
+    set({
+      selectedChat: chatId,
+      replyTo: null,
+      hasOlder: true,
+      messages: [],
+      messagesLoaded: false,
+      unreadAtOpen: unread,
+    });
+    // Fire-and-forget: don't block the message fetch behind two roundtrips.
+    void get().markRead(chatId);
+    await get().refreshMessages();
+  },
+
+  closeChat: () => {
+    set({ selectedChat: null, messages: [], replyTo: null });
+  },
+
+  openNewChat: async (to: string) => {
+    const { accounts, selectedAccount } = get();
+    // New chats by phone number only make sense on an SMS-capable account.
+    const account =
+      (selectedAccount !== 'all' ? accounts.find((a) => a.id === selectedAccount) : undefined) ??
+      accounts.find((a) => a.provider === 'voipms');
+    if (!account) {
+      set({ error: 'No SMS-capable account to start a chat from' });
+      return;
+    }
+    try {
+      const r = await api.newChat(account.id, to);
+      await get().refreshChats();
+      await get().selectChat(r.chatId);
+    } catch (e) {
+      set({ error: (e as Error).message });
+    }
+  },
+
+  refreshChats: async () => {
+    const { selectedAccount } = get();
+    try {
+      const chats = await api.chats(selectedAccount === 'all' ? undefined : selectedAccount);
+      set({ chats, error: null });
+    } catch (e) {
+      set({ error: (e as Error).message });
+    }
+  },
+
+  refreshMessages: async () => {
+    const chatId = get().selectedChat;
+    if (!chatId) return;
+    try {
+      const server = await api.messages(chatId);
+      // Stale-response guard: user switched chats while we were fetching.
+      if (get().selectedChat !== chatId) return;
+      const { messages } = get();
+      const mapped: Message[] = server.map((m) =>
+        m.outgoing === 1 ? ({ ...m, status: 'sent' } as Message) : m
+      );
+      // Merge (don't replace): keep already-loaded older pages and any
+      // in-flight optimistic sends the server doesn't know yet.
+      const byId = new Map<string, Message>(mapped.map((m) => [m.id, m]));
+      for (const m of messages) {
+        if (!byId.has(m.id)) byId.set(m.id, m);
+      }
+      const merged = [...byId.values()].sort((a, b) => a.ts - b.ts);
+      set({ messages: merged, messagesLoaded: true });
+    } catch (e) {
+      set({ error: (e as Error).message, messagesLoaded: true });
+    }
+  },
+
+  /** Load the next older page (DB first; if exhausted, ask the provider). */
+  loadOlderMessages: async () => {
+    const chatId = get().selectedChat;
+    const { loadingOlder, hasOlder } = get();
+    if (!chatId || loadingOlder || !hasOlder) return;
+    set({ loadingOlder: true });
+    try {
+      const oldestTs = get().messages[0]?.ts;
+      if (oldestTs === undefined) {
+        set({ hasOlder: false, loadingOlder: false });
+        return;
+      }
+      let older = await api.messages(chatId, oldestTs);
+      // Stale-response guard: user switched chats while we were fetching.
+      if (get().selectedChat !== chatId) {
+        set({ loadingOlder: false });
+        return;
+      }
+      let exhausted = older.length < 100;
+      if (exhausted) {
+        // DB has no more — try the provider (Telegram/WhatsApp history sync).
+        const r = await api.fetchOlder(chatId);
+        if (get().selectedChat !== chatId) {
+          set({ loadingOlder: false });
+          return;
+        }
+        if (r.fetched > 0) {
+          older = await api.messages(chatId, oldestTs);
+          exhausted = false;
+        }
+      }
+      if (get().selectedChat !== chatId) {
+        set({ loadingOlder: false });
+        return;
+      }
+      const byId = new Map<string, Message>(older.map((m) => [m.id, m]));
+      for (const m of get().messages) if (!byId.has(m.id)) byId.set(m.id, m);
+      set({
+        messages: [...byId.values()].sort((a, b) => a.ts - b.ts),
+        hasOlder: !exhausted,
+        loadingOlder: false,
+      });
+    } catch (e) {
+      set({ loadingOlder: false, error: (e as Error).message });
+    }
+  },
+
+  backfillHistory: async () => {
+    try {
+      const r = await api.backfillHistory();
+      await get().refreshChats();
+      await get().refreshMessages();
+      return { newMessages: r.newMessages, reachedLimit: r.reachedLimit };
+    } catch (e) {
+      set({ error: (e as Error).message });
+      return { newMessages: 0, reachedLimit: true };
+    }
+  },
+
+  sendMessage: async (text: string) => {
+    const { selectedChat, messages, chats, replyTo } = get();
+    const body = text.trim();
+    if (!selectedChat || !body) return;
+    void get().markRead(selectedChat); // replying = actively reading
+    const chat = chats.find((c) => c.id === selectedChat);
+    const quoted = replyTo
+      ? { id: replyTo.id, body: replyTo.body, sender: replyTo.sender, outgoing: replyTo.outgoing }
+      : null;
+    set({ replyTo: null });
+    const now = Date.now();
+    const optId = `opt-${now}-${Math.random().toString(36).slice(2, 6)}`;
+    const opt: Message = {
+      id: optId,
+      chatId: selectedChat,
+      accountId: chat?.accountId ?? '',
+      date: clientDate(now),
+      ts: now,
+      outgoing: 1,
+      sender: null,
+      body,
+      carrierStatus: '',
+      read: 0,
+      status: 'sending',
+      quoted,
+    };
+    set({ messages: [...messages, opt], scrollNonce: get().scrollNonce + 1 });
+    bumpChat(selectedChat, opt, set);
+    try {
+      const res = await api.send(selectedChat, body, quoted?.id);
+      patchMessage(set, optId, { id: res.id || optId, status: 'sent' });
+    } catch (e) {
+      patchMessage(set, optId, { status: 'failed' });
+      set({ error: (e as Error).message });
+    }
+    void get().refreshChats();
+  },
+
+  sendMedia: async (file: Blob, contentType: string, text: string, previewUrl?: string) => {
+    const { selectedChat, messages, chats } = get();
+    const body = text.trim();
+    if (!selectedChat) return;
+    void get().markRead(selectedChat);
+    const chat = chats.find((c) => c.id === selectedChat);
+    const now = Date.now();
+    const optId = `opt-mms-${now}-${Math.random().toString(36).slice(2, 6)}`;
+    const opt: Message = {
+      id: optId,
+      chatId: selectedChat,
+      accountId: chat?.accountId ?? '',
+      date: clientDate(now),
+      ts: now,
+      outgoing: 1,
+      sender: null,
+      body,
+      carrierStatus: '',
+      read: 0,
+      status: 'sending',
+      media: previewUrl ? [{ url: previewUrl, contentType }] : undefined,
+    };
+    set({ messages: [...messages, opt], scrollNonce: get().scrollNonce + 1 });
+    bumpChat(selectedChat, opt, set);
+    try {
+      const res = await api.sendMedia(selectedChat, body, file, contentType);
+      patchMessage(set, optId, { id: res.id || optId, status: 'sent' });
+    } catch (e) {
+      patchMessage(set, optId, { status: 'failed' });
+      set({ error: (e as Error).message });
+    }
+    void get().refreshChats();
+  },
+
+  retryText: async (id: string, text: string) => {
+    patchMessage(set, id, { status: 'sending' });
+    const { selectedChat } = get();
+    if (!selectedChat) return;
+    try {
+      const res = await api.send(selectedChat, text);
+      patchMessage(set, id, { id: res.id || id, status: 'sent' });
+    } catch (e) {
+      patchMessage(set, id, { status: 'failed' });
+      set({ error: (e as Error).message });
+    }
+    void get().refreshChats();
+  },
+
+  reactMessage: async (messageId: string, emoji: string) => {
+    const { selectedChat, messages } = get();
+    if (!selectedChat) return;
+    const next = messages.map((m) =>
+      m.id === messageId ? { ...m, reactions: setMyReaction(m.reactions, emoji) } : m
+    );
+    set({ messages: next });
+    try {
+      await api.react(selectedChat, messageId, emoji);
+      // server broadcasts message-updated to reconcile
+    } catch (e) {
+      set({
+        messages: get().messages.map((m) =>
+          m.id === messageId
+            ? { ...m, reactions: (m.reactions ?? []).filter((r) => r.from !== 'me') }
+            : m
+        ),
+        error: (e as Error).message,
+      });
+    }
+  },
+
+  forwardMessage: async (messageId: string, targetChatId: string) => {
+    try {
+      await api.forward(messageId, targetChatId);
+      await get().refreshChats();
+      if (get().selectedChat === targetChatId) await get().refreshMessages();
+    } catch (e) {
+      set({ error: (e as Error).message });
+    }
+  },
+
+  setReplyTo: (msg) => set({ replyTo: msg }),
+
+  markRead: async (chatId: string) => {
+    set((s) => ({
+      chats: s.chats.map((c) => (c.id === chatId ? { ...c, unread: 0 } : c)),
+    }));
+    try {
+      await api.markRead(chatId);
+      // Re-fetch to confirm — overrides any stale refresh that raced with us.
+      await get().refreshChats();
+    } catch {
+      /* non-fatal */
+    }
+  },
+
+  setStatus: (s) => set({ status: s }),
+  patchStatus: (p) => set((s) => (s.status ? { ...s, status: { ...s.status, ...p } } : s)),
+  setAccounts: (a) => set({ accounts: a }),
+
+  onMessage: async (msg) => {
+    const { selectedChat, messages } = get();
+    if (msg.chatId === selectedChat) {
+      const byId = messages.findIndex((m) => m.id === msg.id);
+      if (byId >= 0) {
+        const next = [...messages];
+        next[byId] = {
+          ...next[byId],
+          ...msg,
+          status: (msg.outgoing === 1 ? 'sent' : next[byId].status) as Message['status'],
+        };
+        set({ messages: next });
+      } else if (msg.outgoing === 1) {
+        // Merge an echoed sent message into its optimistic placeholder.
+        const ph = messages.findIndex(
+          (m) =>
+            m.outgoing === 1 &&
+            m.body === msg.body &&
+            (m.status === 'sending' || m.status === 'sent') &&
+            Math.abs(m.ts - msg.ts) < 60000
+        );
+        if (ph >= 0) {
+          const next = [...messages];
+          next[ph] = { ...next[ph], ...msg, status: 'sent' as const };
+          set({ messages: next });
+        } else {
+          set({
+            messages: [...messages, { ...msg, status: 'sent' as const }].sort((a, b) => a.ts - b.ts),
+          });
+        }
+      } else {
+        const next = [...messages, msg].sort((a, b) => a.ts - b.ts);
+        set({ messages: next });
+        if (document.visibilityState === 'visible') {
+          await get().markRead(msg.chatId);
+        }
+      }
+    }
+    await get().refreshChats();
+  },
+
+  onMessageUpdated: (msg) => {
+    const { selectedChat, messages } = get();
+    if (msg.chatId === selectedChat) {
+      const idx = messages.findIndex((m) => m.id === msg.id);
+      if (idx >= 0) {
+        const next = [...messages];
+        // keep client-only status from the existing bubble
+        next[idx] = { ...msg, status: messages[idx].status };
+        set({ messages: next });
+      }
+    }
+    void get().refreshChats();
+  },
+
+  onMessageDeleted: (id) => {
+    set((s) => ({ messages: s.messages.filter((m) => m.id !== id) }));
+    void get().refreshChats();
+  },
+
+  onTyping: (data) => {
+    set((s) => ({ typing: { ...s.typing, [data.chatId]: { name: data.name, expiresAt: data.expiresAt } } }));
+    // Clear when it lapses (providers stop sending when typing stops).
+    const ttl = Math.max(0, data.expiresAt - Date.now());
+    setTimeout(() => {
+      const cur = get().typing[data.chatId];
+      if (cur && cur.expiresAt <= Date.now()) {
+        set((s) => {
+          const next = { ...s.typing };
+          delete next[data.chatId];
+          return { typing: next };
+        });
+      }
+    }, ttl + 50);
+  },
+}));
+
+// ---------- helpers ----------
+
+function setMyReaction(reactions: Message['reactions'], emoji: string) {
+  const others = (reactions ?? []).filter((r) => r.from !== 'me');
+  return [...others, { emoji, from: 'me' }];
+}
+
+function clientDate(ts: number): string {
+  const d = new Date(ts);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+type SetFn = (
+  partial: StoreState | ((s: StoreState) => Partial<StoreState> | StoreState)
+) => void;
+
+function patchMessage(set: SetFn, id: string, patch: Partial<Message>): void {
+  set((s) => ({ messages: s.messages.map((m) => (m.id === id ? { ...m, ...patch } : m)) }));
+}
+
+function bumpChat(chatId: string, msg: Message, set: SetFn): void {
+  set((s) => ({
+    chats: s.chats
+      .map((c) => (c.id === chatId ? { ...c, lastMessage: msg, ts: msg.ts } : c))
+      .sort((a, b) => b.ts - a.ts),
+  }));
+}

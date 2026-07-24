@@ -1,0 +1,370 @@
+import { useEffect, useRef, useState } from 'react';
+import { useStore } from '../store';
+import { api } from '../api';
+import { EmojiPicker } from './EmojiPicker';
+import { searchEmojis } from '../emoji';
+
+const SMS_LIMIT = 160;
+const MMS_LIMIT = 2048;
+const MAX_BYTES = 1_100_000;
+
+interface Attachment {
+  blob: Blob;
+  contentType: string;
+  previewUrl: string;
+  name: string;
+  size: number;
+}
+
+interface EmojiToken {
+  start: number;
+  query: string;
+}
+
+function loadImage(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob | null> {
+  return new Promise((resolve) => canvas.toBlob(resolve, type, quality));
+}
+
+async function prepareImage(file: File): Promise<{ blob: Blob; contentType: string }> {
+  if (file.size <= MAX_BYTES && (file.type === 'image/jpeg' || file.type === 'image/png')) {
+    return { blob: file, contentType: file.type };
+  }
+  const img = await loadImage(file);
+  const maxDim = 1600;
+  const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+  const w = Math.max(1, Math.round(img.naturalWidth * scale));
+  const h = Math.max(1, Math.round(img.naturalHeight * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('cannot get canvas context');
+  ctx.drawImage(img, 0, 0, w, h);
+  for (const q of [0.85, 0.75, 0.6, 0.45, 0.3]) {
+    const blob = await canvasToBlob(canvas, 'image/jpeg', q);
+    if (blob && blob.size <= MAX_BYTES) return { blob, contentType: 'image/jpeg' };
+  }
+  const blob = await canvasToBlob(canvas, 'image/png');
+  if (blob) return { blob, contentType: 'image/png' };
+  throw new Error('could not encode image');
+}
+
+/** Find a `:shortcod` token immediately before the caret. */
+function tokenAt(text: string, caret: number): EmojiToken | null {
+  const before = text.slice(0, caret);
+  // Colon must be at start or after a non-word char; query is letters/digits/_/-/+.
+  const m = before.match(/(^|[^a-z0-9_]):([a-z0-9_+-]{1,20})$/i);
+  if (!m || m.index === undefined) return null;
+  return { start: m.index + m[1].length, query: m[2].toLowerCase() };
+}
+
+export function Composer() {
+  const selectedChat = useStore((s) => s.selectedChat);
+  const chats = useStore((s) => s.chats);
+  const replyTo = useStore((s) => s.replyTo);
+  const setReplyTo = useStore((s) => s.setReplyTo);
+  const sendMessage = useStore((s) => s.sendMessage);
+  const sendMedia = useStore((s) => s.sendMedia);
+  const [text, setText] = useState('');
+  const [attachment, setAttachment] = useState<Attachment | null>(null);
+  const [prepError, setPrepError] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [token, setToken] = useState<EmojiToken | null>(null);
+  const [selIdx, setSelIdx] = useState(0);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+
+  const chat = chats.find((c) => c.id === selectedChat);
+  // SMS character accounting only applies to SMS/MMS providers.
+  const isSms = chat?.provider === 'voipms';
+
+  const suggestions = token ? searchEmojis(token.query, 8) : [];
+  const showSuggest = suggestions.length > 0;
+
+  // Quote-reply (double-click or ↩) → put the cursor in the textbox.
+  useEffect(() => {
+    if (replyTo) taRef.current?.focus();
+  }, [replyTo]);
+
+  // Tell the provider we're typing (throttled; providers time it out themselves).
+  const lastTypingSent = useRef(0);
+  useEffect(() => {
+    if (!selectedChat || !text.trim()) return;
+    const now = Date.now();
+    if (now - lastTypingSent.current < 4000) return;
+    lastTypingSent.current = now;
+    void api.typing(selectedChat).catch(() => {});
+  }, [text, selectedChat]);
+
+  useEffect(() => () => {
+    if (attachment) URL.revokeObjectURL(attachment.previewUrl);
+  }, [attachment]);
+
+  const hasImage = Boolean(attachment);
+  const mmsMode = isSms && (hasImage || text.length > SMS_LIMIT);
+  const limit = isSms ? (mmsMode ? MMS_LIMIT : SMS_LIMIT) : Infinity;
+  const overLimit = text.length > limit;
+  const trimmed = text.trim();
+  const canSend = Boolean(trimmed || hasImage) && !overLimit;
+
+  function recomputeToken(value: string) {
+    const ta = taRef.current;
+    const caret = ta?.selectionStart ?? value.length;
+    const newToken = tokenAt(value, caret);
+    // Only reset the suggestion index when the query actually changes, so
+    // arrow-key navigation isn't wiped out.
+    if (newToken?.query !== token?.query) setSelIdx(0);
+    setToken(newToken);
+  }
+
+  function replaceRange(start: number, end: number, insert: string) {
+    const ta = taRef.current;
+    const next = text.slice(0, start) + insert + text.slice(end);
+    setText(next);
+    const pos = start + insert.length;
+    setToken(null);
+    requestAnimationFrame(() => {
+      if (ta) {
+        ta.selectionStart = ta.selectionEnd = pos;
+        ta.focus();
+      }
+    });
+  }
+
+  function insertAtCursor(char: string) {
+    const ta = taRef.current;
+    const caret = ta?.selectionStart ?? text.length;
+    replaceRange(caret, caret, char);
+  }
+
+  function acceptSuggestion(idx: number) {
+    const e = suggestions[idx];
+    if (!e || !token) return;
+    const ta = taRef.current;
+    const caret = ta?.selectionStart ?? text.length;
+    replaceRange(token.start, caret, e.char);
+  }
+
+  async function onPickFile(file: File | undefined) {
+    setPrepError(null);
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setPrepError('Only image attachments are supported.');
+      return;
+    }
+    try {
+      const { blob, contentType } = await prepareImage(file);
+      if (attachment) URL.revokeObjectURL(attachment.previewUrl);
+      setAttachment({
+        blob,
+        contentType,
+        name: file.name || 'pasted-image',
+        size: blob.size,
+        previewUrl: URL.createObjectURL(blob),
+      });
+    } catch (e) {
+      setPrepError((e as Error).message || 'Could not prepare image');
+    }
+  }
+
+  // Paste an image from the clipboard (like WhatsApp Web) → becomes an
+  // attachment with the normal caption flow.
+  function onPaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const file = Array.from(e.clipboardData?.files ?? []).find((f) =>
+      f.type.startsWith('image/')
+    );
+    if (!file) return; // plain-text paste proceeds normally
+    e.preventDefault();
+    void onPickFile(file);
+  }
+
+  async function submit() {
+    if (!canSend) return;
+    const body = trimmed;
+    if (attachment) {
+      const att = attachment;
+      setAttachment(null);
+      setText('');
+      setPrepError(null);
+      await sendMedia(att.blob, att.contentType, body, att.previewUrl);
+    } else {
+      setText('');
+      setPrepError(null);
+      await sendMessage(body);
+    }
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (showSuggest) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelIdx((i) => (i + 1) % suggestions.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelIdx((i) => (i - 1 + suggestions.length) % suggestions.length);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        acceptSuggestion(selIdx);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setToken(null);
+        return;
+      }
+    }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      void submit();
+    }
+  }
+
+  if (!selectedChat) return null;
+
+  // WhatsApp channels (newsletters) are broadcast-only for followers.
+  if (chat?.type === 'channel') {
+    return (
+      <div className="composer">
+        <div className="channel-readonly">📢 This is a channel — only the owner can post.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="composer">
+      <div className="composer-btn-col">
+        <button
+          className="tool-btn"
+          title="Emoji"
+          onClick={() => setPickerOpen((v) => !v)}
+        >
+          😀
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={(e) => void onPickFile(e.target.files?.[0])}
+        />
+        <button
+          className="tool-btn"
+          title="Attach image"
+          onClick={() => fileRef.current?.click()}
+        >
+          ＋
+        </button>
+        {pickerOpen && (
+          <EmojiPicker
+            onPick={(char) => {
+              insertAtCursor(char);
+              taRef.current?.focus();
+            }}
+            onClose={() => setPickerOpen(false)}
+          />
+        )}
+      </div>
+
+      <div className="composer-input-col">
+        {replyTo && (
+          <div className="reply-preview">
+            <div className="reply-preview-bar" />
+            <div className="reply-preview-body">
+              <span className="reply-preview-author">
+                {replyTo.outgoing === 1 ? 'You' : (chat?.name ?? chat?.contactRaw ?? '')}
+              </span>
+              <span className="reply-preview-text">
+                {replyTo.body || (replyTo.media?.length ? '📷 Photo' : '')}
+              </span>
+            </div>
+            <button className="attach-remove" title="Cancel reply" onClick={() => setReplyTo(null)}>
+              ✕
+            </button>
+          </div>
+        )}
+        {showSuggest && (
+          <div className="emoji-suggest">
+            {suggestions.map((s, i) => (
+              <button
+                key={s.char + (s.shortcodes[0] ?? '')}
+                className={`emoji-suggest-row${i === selIdx ? ' active' : ''}`}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  acceptSuggestion(i);
+                }}
+                onMouseEnter={() => setSelIdx(i)}
+              >
+                <span className="emoji-suggest-char">{s.char}</span>
+                <span className="emoji-suggest-code">:{s.shortcodes[0]}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {attachment && (
+          <div className="attach-preview">
+            <img src={attachment.previewUrl} alt={attachment.name} />
+            <div className="attach-info">
+              <span className="attach-name">{attachment.name}</span>
+              <span className="attach-size">{Math.round(attachment.size / 1024)} KB</span>
+            </div>
+            <button
+              className="attach-remove"
+              title="Remove"
+              onClick={() => {
+                URL.revokeObjectURL(attachment.previewUrl);
+                setAttachment(null);
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
+        {prepError && <div className="attach-error">{prepError}</div>}
+        <textarea
+          ref={taRef}
+          rows={1}
+          placeholder={hasImage ? 'Add a caption (optional)…' : 'Type a message…'}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            recomputeToken(e.target.value);
+          }}
+          onPaste={onPaste}
+          onKeyUp={(e) => {
+            if (['ArrowUp', 'ArrowDown', 'Enter', 'Tab', 'Escape'].includes(e.key)) return;
+            recomputeToken(text);
+          }}
+          onClick={() => recomputeToken(text)}
+          onBlur={() => setTimeout(() => setToken(null), 150)}
+          onKeyDown={onKeyDown}
+        />
+      </div>
+
+      <div className="composer-meta">
+        {isSms && (
+          <span className={`counter${overLimit ? ' over' : ''}`}>
+            {text.length}/{limit}
+            {mmsMode && <span className="mms-tag">MMS</span>}
+          </span>
+        )}
+        <button className="send-btn" disabled={!canSend} onClick={() => void submit()}>
+          Send
+        </button>
+      </div>
+    </div>
+  );
+}

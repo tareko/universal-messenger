@@ -1,0 +1,11 @@
+# Example Caddy reverse-proxy block.
+# Point voip.ms' SMS URL callback (and your browser) at this host.
+# The SSE endpoint needs long-lived connections — Caddy handles that by default.
+
+sms.example.com {
+	reverse_proxy 127.0.0.1:8317
+}
+
+# If you use a Tailscale-only deployment, bind the app to 0.0.0.0 and skip the
+# proxy entirely, or use `tailscale serve`:
+#   tailscale serve --bg 8317

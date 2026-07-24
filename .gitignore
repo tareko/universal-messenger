@@ -1,0 +1,20 @@
+node_modules/
+dist/
+*.tsbuildinfo
+
+# local database (anywhere)
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# cached media (runtime data)
+data/media/
+
+# provider session state (whatsapp/telegram auth)
+data/sessions/
+
+# secrets
+.env
+
+*.log

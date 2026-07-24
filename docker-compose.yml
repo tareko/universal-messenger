@@ -1,0 +1,10 @@
+services:
+  universal-messenger:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8317:8317"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data

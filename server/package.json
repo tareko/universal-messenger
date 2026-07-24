@@ -1,0 +1,36 @@
+{
+  "name": "server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "import-voipms": "tsx src/import-voipms.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^7.0.0-rc13",
+    "better-sqlite3": "^11.8.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "fast-xml-parser": "^4.5.1",
+    "libphonenumber-js": "^1.12.6",
+    "multer": "^2.2.0",
+    "pino": "^10.3.1",
+    "qrcode": "^1.5.4",
+    "telegram": "^2.26.22"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/multer": "^2.2.0",
+    "@types/node": "^22.10.5",
+    "@types/qrcode": "^1.5.6",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}
