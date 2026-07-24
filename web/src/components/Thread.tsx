@@ -1,10 +1,12 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useStore } from '../store';
+import { useStore, isPersonSelection } from '../store';
 import { api } from '../api';
 import { Avatar } from './Avatar';
 import { MessageStatus } from './MessageStatus';
 import { ForwardDialog } from './ForwardDialog';
 import { EmojiPicker } from './EmojiPicker';
+import { ProfilePanel } from './ProfilePanel';
+import { providerBadge } from './AccountSwitcher';
 import type { Message } from '../types';
 
 /** Reaction quick-sets per provider (SMS = iMessage tapbacks; MM = mapped set). */
@@ -20,7 +22,19 @@ const MORE_ALLOWED = new Set(['whatsapp', 'telegram']);
 export function Thread() {
   const selectedChat = useStore((s) => s.selectedChat);
   const chats = useStore((s) => s.chats);
+  const people = useStore((s) => s.people);
   const accounts = useStore((s) => s.accounts);
+  const typing = useStore((s) => s.typing);
+  const person = useMemo(
+    () =>
+      isPersonSelection(selectedChat) ? people.find((p) => `person:${p.id}` === selectedChat) : undefined,
+    [people, selectedChat]
+  );
+  const memberChats = useMemo(
+    () => (person ? chats.filter((c) => person.chatIds.includes(c.id)) : []),
+    [person, chats]
+  );
+  const [showProfile, setShowProfile] = useState(false);
   const messages = useStore((s) => s.messages);
   const messagesLoaded = useStore((s) => s.messagesLoaded);
   const unreadAtOpen = useStore((s) => s.unreadAtOpen);
@@ -39,13 +53,24 @@ export function Thread() {
     if (scrollNonce > 0) jumpToBottom();
   }, [scrollNonce]);
 
-  const chat = useMemo(() => chats.find((x) => x.id === selectedChat), [chats, selectedChat]);
+  const chat = useMemo(() => {
+    if (person) {
+      const latest = memberChats.reduce<(typeof memberChats)[number] | undefined>(
+        (a, b) => ((b.lastMessage?.ts ?? b.ts) > ((a?.lastMessage?.ts ?? a?.ts) || 0) ? b : a),
+        undefined
+      );
+      return latest ? { ...latest, name: person.name, title: person.name } : undefined;
+    }
+    return chats.find((x) => x.id === selectedChat);
+  }, [chats, selectedChat, person, memberChats]);
   const account = useMemo(
     () => accounts.find((a) => a.id === chat?.accountId),
     [accounts, chat]
   );
   const typingEntry = useStore((s) => (selectedChat ? s.typing[selectedChat] : undefined));
-  const isTyping = Boolean(typingEntry && typingEntry.expiresAt > Date.now());
+  const isTyping = person
+    ? memberChats.some((c) => typing[c.id] && typing[c.id].expiresAt > Date.now())
+    : Boolean(typingEntry && typingEntry.expiresAt > Date.now());
   const replyTo = useStore((s) => s.replyTo);
   const canReact = account?.capabilities.react ?? false;
   const canReply = account?.capabilities.reply ?? false;
@@ -238,7 +263,11 @@ export function Thread() {
           ←
         </button>
         <Avatar name={name || chat.remoteId} size={36} />
-        <div className="thread-header-name">
+        <div
+          className="thread-header-name clickable"
+          onClick={() => setShowProfile(true)}
+          title="View profile"
+        >
           <div className="thread-name" title={name || formatNumber(chat.remoteId)}>
             {chat.type === 'group' ? '👥 ' : chat.type === 'channel' ? '📢 ' : ''}
             {name || formatNumber(chat.remoteId)}
@@ -301,6 +330,7 @@ export function Thread() {
                 canReact={canReact}
                 canReply={canReply}
                 provider={account?.provider ?? ''}
+                showProvider={Boolean(person)}
                 onReact={(emoji) => void reactMessage(m.id, emoji)}
                 onReply={() => setReplyTo(m)}
                 onForward={() => setForwarding(m)}
@@ -313,6 +343,9 @@ export function Thread() {
       </div>
 
       {forwarding && <ForwardDialog message={forwarding} onClose={() => setForwarding(null)} />}
+      {showProfile && (
+        <ProfilePanel chat={chat} person={person ?? null} memberChats={memberChats} onClose={() => setShowProfile(false)} />
+      )}
       {showJump && (
         <button className="jump-bottom" title="Jump to latest" onClick={jumpToBottom}>
           ↓
@@ -328,6 +361,7 @@ function Bubble({
   canReact,
   canReply,
   provider,
+  showProvider,
   onReact,
   onReply,
   onForward,
@@ -339,6 +373,7 @@ function Bubble({
   canReact: boolean;
   canReply: boolean;
   provider: string;
+  showProvider?: boolean;
   onReact: (emoji: string) => void;
   onReply: () => void;
   onForward: () => void;
@@ -545,6 +580,11 @@ function Bubble({
           {caption && <span className="bubble-text" dir="auto">{caption}</span>}
           {caption && !hasMedia && URL_RE.test(caption) && <LinkPreview messageId={msg.id} />}
           <span className="bubble-meta">
+            {showProvider && (
+              <span className="provider-badge meta-badge">
+                {providerBadge(msg.accountId.split(':')[0])}
+              </span>
+            )}
             {msg.edited ? <span className="bubble-edited">edited</span> : null}
             <span className="bubble-time">{formatTime(msg.ts)}</span>
             <MessageStatus msg={msg} onRetry={onRetry} />

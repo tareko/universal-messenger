@@ -16,6 +16,13 @@ import {
   getContactName,
   getKv,
   setKv,
+  getPeople,
+  getChatPersonMap,
+  createPerson,
+  updatePerson,
+  addChatToPerson,
+  removeChatFromPerson,
+  deletePerson,
   dedupMessages,
   dedupReactionEvents,
   registerPushEndpoint,
@@ -300,7 +307,57 @@ api.get('/accounts', (_req, res) => {
 
 api.get('/chats', (req, res) => {
   const account = String(req.query.account || '');
-  res.json(getChats(account || undefined));
+  const chats = getChats(account || undefined);
+  const personMap = getChatPersonMap();
+  res.json(chats.map((c) => ({ ...c, personId: personMap.get(c.id) ?? null })));
+});
+
+// ---------- people (cross-provider identity linking) ----------
+
+api.get('/people', (_req, res) => {
+  res.json(getPeople());
+});
+
+api.post('/people', (req, res) => {
+  const { name, chatIds, defaultChatId, sendMode } = req.body as {
+    name: string;
+    chatIds: string[];
+    defaultChatId?: string;
+    sendMode?: 'origin' | 'default';
+  };
+  if (!name || !Array.isArray(chatIds) || chatIds.length < 2) {
+    return res.status(400).json({ error: 'name and at least 2 chatIds required' });
+  }
+  const id = createPerson(name, chatIds, defaultChatId ?? chatIds[0], sendMode ?? 'origin');
+  broadcast({ type: 'chats-updated' });
+  res.json({ ok: true, id });
+});
+
+api.patch('/people/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const person = getPeople().find((p) => p.id === id);
+  if (!person) return res.status(404).json({ error: 'person not found' });
+  const { name, defaultChatId, sendMode, addChatIds, removeChatIds } = req.body as {
+    name?: string;
+    defaultChatId?: string;
+    sendMode?: 'origin' | 'default';
+    addChatIds?: string[];
+    removeChatIds?: string[];
+  };
+  updatePerson(id, { name, defaultChatId, sendMode });
+  for (const c of addChatIds ?? []) addChatToPerson(id, c);
+  for (const c of removeChatIds ?? []) removeChatFromPerson(c);
+  // If the person is down to one chat, dissolve the link entirely.
+  const remaining = getPeople().find((p) => p.id === id);
+  if (remaining && remaining.chatIds.length < 2) deletePerson(id);
+  broadcast({ type: 'chats-updated' });
+  res.json({ ok: true });
+});
+
+api.delete('/people/:id', (req, res) => {
+  deletePerson(Number(req.params.id));
+  broadcast({ type: 'chats-updated' });
+  res.json({ ok: true });
 });
 
 api.get('/messages', (req, res) => {

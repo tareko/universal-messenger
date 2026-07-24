@@ -83,6 +83,19 @@ export function initDb() {
       endpoint TEXT PRIMARY KEY,
       created  INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS people (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      name            TEXT NOT NULL,
+      default_chat_id TEXT,
+      send_mode       TEXT NOT NULL DEFAULT 'origin', -- 'origin' | 'default'
+      created         INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS person_chats (
+      chat_id   TEXT PRIMARY KEY,
+      person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE
+    );
   `);
 
   // Full-text search index over message bodies (external-content FTS5).
@@ -726,6 +739,93 @@ function reactionsForChat(chatIdArg: string): Map<string, ReactionRef[]> {
     map.set(r.message_id, list);
   }
   return map;
+}
+
+// ---------- people (cross-provider identity linking) ----------
+export interface Person {
+  id: number;
+  name: string;
+  defaultChatId: string | null;
+  sendMode: 'origin' | 'default';
+  chatIds: string[];
+}
+
+export function createPerson(
+  name: string,
+  chatIds: string[],
+  defaultChatId: string | null,
+  sendMode: 'origin' | 'default'
+): number {
+  const tx = getDb().transaction(() => {
+    const id = Number(
+      getDb()
+        .prepare('INSERT INTO people(name, default_chat_id, send_mode, created) VALUES(?, ?, ?, ?)')
+        .run(name, defaultChatId, sendMode, Date.now()).lastInsertRowid
+    );
+    const stmt = getDb().prepare('INSERT INTO person_chats(chat_id, person_id) VALUES(?, ?)');
+    for (const c of chatIds) stmt.run(c, id);
+    return id;
+  });
+  return tx();
+}
+
+export function updatePerson(
+  id: number,
+  patch: { name?: string; defaultChatId?: string | null; sendMode?: 'origin' | 'default' }
+): void {
+  if (patch.name !== undefined) getDb().prepare('UPDATE people SET name = ? WHERE id = ?').run(patch.name, id);
+  if (patch.defaultChatId !== undefined)
+    getDb().prepare('UPDATE people SET default_chat_id = ? WHERE id = ?').run(patch.defaultChatId, id);
+  if (patch.sendMode !== undefined)
+    getDb().prepare('UPDATE people SET send_mode = ? WHERE id = ?').run(patch.sendMode, id);
+}
+
+export function addChatToPerson(personId: number, chatId: string): void {
+  getDb()
+    .prepare('INSERT INTO person_chats(chat_id, person_id) VALUES(?, ?) ON CONFLICT(chat_id) DO UPDATE SET person_id = excluded.person_id')
+    .run(chatId, personId);
+}
+
+export function removeChatFromPerson(chatId: string): void {
+  getDb().prepare('DELETE FROM person_chats WHERE chat_id = ?').run(chatId);
+}
+
+export function deletePerson(id: number): void {
+  getDb().prepare('DELETE FROM person_chats WHERE person_id = ?').run(id);
+  getDb().prepare('DELETE FROM people WHERE id = ?').run(id);
+}
+
+export function getPeople(): Person[] {
+  const people = getDb().prepare('SELECT * FROM people ORDER BY name COLLATE NOCASE').all() as Record<
+    string,
+    unknown
+  >[];
+  const links = getDb().prepare('SELECT chat_id, person_id FROM person_chats').all() as {
+    chat_id: string;
+    person_id: number;
+  }[];
+  const byPerson = new Map<number, string[]>();
+  for (const l of links) {
+    const arr = byPerson.get(l.person_id) ?? [];
+    arr.push(l.chat_id);
+    byPerson.set(l.person_id, arr);
+  }
+  return people.map((p) => ({
+    id: Number(p.id),
+    name: String(p.name),
+    defaultChatId: p.default_chat_id ? String(p.default_chat_id) : null,
+    sendMode: (String(p.send_mode) === 'default' ? 'default' : 'origin') as Person['sendMode'],
+    chatIds: byPerson.get(Number(p.id)) ?? [],
+  }));
+}
+
+/** chatId → personId map (for annotating the chat list). */
+export function getChatPersonMap(): Map<string, number> {
+  const rows = getDb().prepare('SELECT chat_id, person_id FROM person_chats').all() as {
+    chat_id: string;
+    person_id: number;
+  }[];
+  return new Map(rows.map((r) => [r.chat_id, r.person_id]));
 }
 
 // ---------- contacts ----------

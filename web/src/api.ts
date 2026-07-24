@@ -1,4 +1,4 @@
-import type { Account, AppStatus, Chat, Contact, Message } from './types';
+import type { Account, AppStatus, Chat, Contact, Message, Person } from './types';
 
 const base = '/api';
 
@@ -134,6 +134,23 @@ export const api = {
     getJson<{ onWhatsApp: boolean | null }>(`/providers/whatsapp/check?number=${encodeURIComponent(number)}`),
   contactLookup: (tel: string) =>
     getJson<{ name: string | null; numbers: string[] }>(`/contacts/lookup?tel=${encodeURIComponent(tel)}`),
+  people: () => getJson<Person[]>('/people'),
+  createPerson: (name: string, chatIds: string[], defaultChatId?: string, sendMode?: string) =>
+    postJson<{ ok: boolean; id: number }>('/people', { name, chatIds, defaultChatId, sendMode }),
+  updatePerson: (id: number, patch: Record<string, unknown>) =>
+    fetch(`${base}/people/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify(patch),
+    }).then(async (r) => {
+      if (!r.ok) throw new Error(await errorMessage(r));
+      return (await r.json()) as { ok: boolean };
+    }),
+  deletePerson: (id: number) =>
+    fetch(`${base}/people/${id}`, { method: 'DELETE', headers: authHeaders() }).then(async (r) => {
+      if (!r.ok) throw new Error(await errorMessage(r));
+      return (await r.json()) as { ok: boolean };
+    }),
   contacts: (q: string) => getJson<Contact[]>(`/contacts?q=${encodeURIComponent(q)}`),
   search: (q: string) =>
     getJson<{ message: Message; chatId: string; chatName: string | null }[]>(

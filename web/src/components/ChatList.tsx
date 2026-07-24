@@ -14,6 +14,7 @@ interface SearchHit {
 
 export function ChatList() {
   const chats = useStore((s) => s.chats);
+  const people = useStore((s) => s.people);
   const accounts = useStore((s) => s.accounts);
   const typing = useStore((s) => s.typing);
   const selectedChat = useStore((s) => s.selectedChat);
@@ -71,9 +72,69 @@ export function ChatList() {
         c.name?.toLowerCase().includes(q) ||
         c.title?.toLowerCase().includes(q) ||
         c.contactRaw.toLowerCase().includes(q) ||
-        c.remoteId.includes(q)
+        c.remoteId.includes(q) ||
+        (c.personId != null &&
+          people.find((p) => p.id === c.personId)?.name.toLowerCase().includes(q))
     );
-  }, [chats, query, tab]);
+  }, [chats, query, tab, people]);
+
+  /** Person-grouped rows: linked chats collapse into one row per person. */
+  const displayRows = useMemo(() => {
+    interface Row {
+      selId: string;
+      name: string;
+      subtitle: string;
+      subtitleTyping: boolean;
+      ts: number;
+      unread: number;
+      badges: string[];
+      linked: boolean;
+      group?: boolean;
+      channel?: boolean;
+    }
+    const rows: Row[] = [];
+    const seenPeople = new Set<number>();
+    for (const c of filteredChats) {
+      const typingHere = typing[c.id] && typing[c.id].expiresAt > Date.now();
+      if (c.personId != null) {
+        if (seenPeople.has(c.personId)) continue;
+        seenPeople.add(c.personId);
+        const person = people.find((p) => p.id === c.personId);
+        const members = chats.filter((x) => x.personId === c.personId);
+        const latest = members.reduce((a, b) =>
+          (b.lastMessage?.ts ?? b.ts) > (a.lastMessage?.ts ?? a.ts) ? b : a
+        );
+        const anyTyping = members.some((m) => typing[m.id] && typing[m.id].expiresAt > Date.now());
+        rows.push({
+          selId: `person:${c.personId}`,
+          name: person?.name ?? c.name ?? c.contactRaw ?? '?',
+          subtitle: anyTyping ? 'typing…' : previewText(latest.lastMessage),
+          subtitleTyping: anyTyping,
+          ts: latest.lastMessage?.ts ?? latest.ts,
+          unread: members.reduce((sum, x) => sum + x.unread, 0),
+          badges: members.map((x) => providerBadge(x.provider)),
+          linked: true,
+          group: latest.type === 'group',
+          channel: latest.type === 'channel',
+        });
+      } else {
+        const sub = chatSubtitle(c);
+        rows.push({
+          selId: c.id,
+          name: c.name ?? c.title ?? c.contactRaw ?? c.remoteId,
+          subtitle: typingHere ? sub.text : sub.text,
+          subtitleTyping: sub.typing,
+          ts: c.lastMessage?.ts ?? c.ts,
+          unread: c.unread,
+          badges: selectedAccount === 'all' ? [providerBadge(c.provider)] : [],
+          linked: false,
+          group: c.type === 'group',
+          channel: c.type === 'channel',
+        });
+      }
+    }
+    return rows.sort((a, b) => b.ts - a.ts);
+  }, [filteredChats, people, chats, typing, selectedAccount, chatSubtitle]);
 
   function switchTab(t: 'chats' | 'channels') {
     setTab(t);
@@ -136,25 +197,23 @@ export function ChatList() {
       <div className="contact-list-scroll">
         {showingSearch ? (
           <>
-            {filteredChats.length > 0 &&
-              filteredChats.map((c) => {
-                const sub = chatSubtitle(c);
-                return (
-                  <ChatRow
-                    key={c.id}
-                    name={c.name ?? c.title ?? c.contactRaw ?? c.remoteId}
-                    subtitle={sub.text}
-                    subtitleTyping={sub.typing}
-                    ts={c.lastMessage?.ts ?? c.ts}
-                    unread={c.unread}
-                    active={selectedChat === c.id}
-                    badge={selectedAccount === 'all' ? providerBadge(c.provider) : undefined}
-                    group={c.type === 'group'}
-                channel={c.type === 'channel'}
-                    onClick={() => void selectChat(c.id)}
-                  />
-                );
-              })}
+            {displayRows.length > 0 &&
+              displayRows.map((r) => (
+                <ChatRow
+                  key={r.selId}
+                  name={r.name}
+                  subtitle={r.subtitle}
+                  subtitleTyping={r.subtitleTyping}
+                  ts={r.ts}
+                  unread={r.unread}
+                  active={selectedChat === r.selId}
+                  badges={r.badges}
+                  linked={r.linked}
+                  group={r.group}
+                  channel={r.channel}
+                  onClick={() => void selectChat(r.selId)}
+                />
+              ))}
             {results.map((c) => (
               <ChatRow
                 key={c.tel}
@@ -181,31 +240,29 @@ export function ChatList() {
                 ))}
               </>
             )}
-            {filteredChats.length === 0 && results.length === 0 && msgHits.length === 0 && (
+            {displayRows.length === 0 && results.length === 0 && msgHits.length === 0 && (
               <div className="empty-hint">
                 No matches for “{query}”. Enter a phone number to start a new SMS chat.
               </div>
             )}
           </>
         ) : (
-          filteredChats.map((c) => {
-            const sub = chatSubtitle(c);
-            return (
-              <ChatRow
-                key={c.id}
-                name={c.name ?? c.title ?? c.contactRaw ?? c.remoteId}
-                subtitle={sub.text}
-                subtitleTyping={sub.typing}
-                ts={c.lastMessage?.ts ?? c.ts}
-                unread={c.unread}
-                active={selectedChat === c.id}
-                badge={selectedAccount === 'all' ? providerBadge(c.provider) : undefined}
-                group={c.type === 'group'}
-                channel={c.type === 'channel'}
-                onClick={() => void selectChat(c.id)}
-              />
-            );
-          })
+          displayRows.map((r) => (
+            <ChatRow
+              key={r.selId}
+              name={r.name}
+              subtitle={r.subtitle}
+              subtitleTyping={r.subtitleTyping}
+              ts={r.ts}
+              unread={r.unread}
+              active={selectedChat === r.selId}
+              badges={r.badges}
+              linked={r.linked}
+              group={r.group}
+              channel={r.channel}
+              onClick={() => void selectChat(r.selId)}
+            />
+          ))
         )}
 
         {!showingSearch && chats.length === 0 && (
@@ -252,6 +309,8 @@ function ChatRow({
   unread,
   active,
   badge,
+  badges,
+  linked,
   group,
   channel,
   onClick,
@@ -263,10 +322,13 @@ function ChatRow({
   unread: number;
   active: boolean;
   badge?: string;
+  badges?: string[];
+  linked?: boolean;
   group?: boolean;
   channel?: boolean;
   onClick: () => void;
 }) {
+  const allBadges = badges ?? (badge ? [badge] : []);
   return (
     <button className={`contact-row${active ? ' active' : ''}`} onClick={onClick}>
       <Avatar name={name} />
@@ -274,8 +336,11 @@ function ChatRow({
         <div className="contact-row-top">
           <span className="contact-name">
             {group ? '👥 ' : channel ? '📢 ' : ''}
+            {linked ? '🔗 ' : ''}
             {name}
-            {badge ? <span className="provider-badge">{badge}</span> : null}
+            {allBadges.map((b, i) => (
+              <span key={i} className="provider-badge">{b}</span>
+            ))}
           </span>
           {ts ? <span className="contact-time">{formatTime(ts)}</span> : null}
         </div>

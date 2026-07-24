@@ -1,6 +1,10 @@
 import { create } from 'zustand';
 import { api } from './api';
-import type { Account, AppStatus, Chat, Message } from './types';
+import type { Account, AppStatus, Chat, Message, Person } from './types';
+
+export function isPersonSelection(sel: string | null): boolean {
+  return sel?.startsWith('person:') ?? false;
+}
 
 interface StoreState {
   status: AppStatus | null;
@@ -10,7 +14,8 @@ interface StoreState {
   selectedAccount: string;
 
   chats: Chat[];
-  selectedChat: string | null; // chat id
+  people: Person[];
+  selectedChat: string | null; // chat id, or 'person:<id>' for a linked person
   messages: Message[];
   replyTo: Message | null; // message being quoted in the composer
   hasOlder: boolean; // more history available (DB or provider-side)
@@ -32,6 +37,7 @@ interface StoreState {
   closeChat: () => void;
   openNewChat: (to: string) => Promise<void>;
   refreshChats: () => Promise<void>;
+  refreshPeople: () => Promise<void>;
   refreshMessages: () => Promise<void>;
   loadOlderMessages: () => Promise<void>;
   backfillHistory: () => Promise<{ newMessages: number; reachedLimit: boolean }>;
@@ -57,6 +63,7 @@ export const useStore = create<StoreState>((set, get) => ({
   accounts: [],
   selectedAccount: 'all',
   chats: [],
+  people: [],
   selectedChat: null,
   messages: [],
   replyTo: null,
@@ -74,7 +81,8 @@ export const useStore = create<StoreState>((set, get) => ({
     try {
       const status = await api.status();
       const accounts = status.accounts?.length ? status.accounts : await api.accounts();
-      set({ status, accounts, loading: false });
+      const people = await api.people();
+      set({ status, accounts, people, loading: false });
       await get().refreshChats();
     } catch (e) {
       set({ loading: false, error: (e as Error).message });
@@ -87,9 +95,17 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   selectChat: async (chatId: string) => {
-    // Capture the unread boundary BEFORE markRead zeroes it, so the thread
-    // can show an "N unread messages" divider and scroll to it.
-    const unread = get().chats.find((c) => c.id === chatId)?.unread ?? 0;
+    // Capture the unread boundary BEFORE markRead zeroes it (summed across
+    // member chats for a linked person), for the unread divider.
+    let unread: number;
+    if (isPersonSelection(chatId)) {
+      const person = get().people.find((p) => `person:${p.id}` === chatId);
+      unread = get()
+        .chats.filter((c) => person?.chatIds.includes(c.id))
+        .reduce((sum, c) => sum + c.unread, 0);
+    } else {
+      unread = get().chats.find((c) => c.id === chatId)?.unread ?? 0;
+    }
     set({
       selectedChat: chatId,
       replyTo: null,
@@ -98,7 +114,7 @@ export const useStore = create<StoreState>((set, get) => ({
       messagesLoaded: false,
       unreadAtOpen: unread,
     });
-    // Fire-and-forget: don't block the message fetch behind two roundtrips.
+    // Fire-and-forget: don't block the message fetch behind roundtrips.
     void get().markRead(chatId);
     await get().refreshMessages();
   },
@@ -136,17 +152,27 @@ export const useStore = create<StoreState>((set, get) => ({
     }
   },
 
-  refreshMessages: async () => {
-    const chatId = get().selectedChat;
-    if (!chatId) return;
+  refreshPeople: async () => {
     try {
-      const server = await api.messages(chatId);
+      const people = await api.people();
+      set({ people });
+    } catch {
+      /* non-fatal */
+    }
+  },
+
+  refreshMessages: async () => {
+    const sel = get().selectedChat;
+    if (!sel) return;
+    try {
+      const ids = memberChatIds(get());
+      const pages = await Promise.all(ids.map((id) => api.messages(id)));
       // Stale-response guard: user switched chats while we were fetching.
-      if (get().selectedChat !== chatId) return;
+      if (get().selectedChat !== sel) return;
       const { messages } = get();
-      const mapped: Message[] = server.map((m) =>
-        m.outgoing === 1 ? ({ ...m, status: 'sent' } as Message) : m
-      );
+      const mapped: Message[] = pages
+        .flat()
+        .map((m) => (m.outgoing === 1 ? ({ ...m, status: 'sent' } as Message) : m));
       // Merge (don't replace): keep already-loaded older pages and any
       // in-flight optimistic sends the server doesn't know yet.
       const byId = new Map<string, Message>(mapped.map((m) => [m.id, m]));
@@ -162,44 +188,43 @@ export const useStore = create<StoreState>((set, get) => ({
 
   /** Load the next older page (DB first; if exhausted, ask the provider). */
   loadOlderMessages: async () => {
-    const chatId = get().selectedChat;
+    const sel = get().selectedChat;
     const { loadingOlder, hasOlder } = get();
-    if (!chatId || loadingOlder || !hasOlder) return;
+    if (!sel || loadingOlder || !hasOlder) return;
     set({ loadingOlder: true });
     try {
-      const oldestTs = get().messages[0]?.ts;
-      if (oldestTs === undefined) {
-        set({ hasOlder: false, loadingOlder: false });
-        return;
-      }
-      let older = await api.messages(chatId, oldestTs);
-      // Stale-response guard: user switched chats while we were fetching.
-      if (get().selectedChat !== chatId) {
+      const ids = memberChatIds(get());
+      // Per member chat: oldest loaded ts → older DB page → provider fallback.
+      const results = await Promise.all(
+        ids.map(async (id) => {
+          const oldest = get().messages.filter((m) => m.chatId === id)[0]?.ts;
+          if (oldest === undefined) return { id, msgs: [] as Message[], exhausted: true };
+          let msgs = await api.messages(id, oldest);
+          let exhausted = msgs.length < 100;
+          if (exhausted) {
+            const r = await api.fetchOlder(id);
+            if (r.fetched > 0) {
+              msgs = await api.messages(id, oldest);
+              exhausted = false;
+            }
+          }
+          return { id, msgs, exhausted };
+        })
+      );
+      if (get().selectedChat !== sel) {
         set({ loadingOlder: false });
         return;
       }
-      let exhausted = older.length < 100;
-      if (exhausted) {
-        // DB has no more — try the provider (Telegram/WhatsApp history sync).
-        const r = await api.fetchOlder(chatId);
-        if (get().selectedChat !== chatId) {
-          set({ loadingOlder: false });
-          return;
-        }
-        if (r.fetched > 0) {
-          older = await api.messages(chatId, oldestTs);
-          exhausted = false;
-        }
+      const byId = new Map<string, Message>();
+      let allExhausted = true;
+      for (const r of results) {
+        for (const m of r.msgs) byId.set(m.id, m);
+        if (!r.exhausted) allExhausted = false;
       }
-      if (get().selectedChat !== chatId) {
-        set({ loadingOlder: false });
-        return;
-      }
-      const byId = new Map<string, Message>(older.map((m) => [m.id, m]));
       for (const m of get().messages) if (!byId.has(m.id)) byId.set(m.id, m);
       set({
         messages: [...byId.values()].sort((a, b) => a.ts - b.ts),
-        hasOlder: !exhausted,
+        hasOlder: !allExhausted,
         loadingOlder: false,
       });
     } catch (e) {
@@ -224,7 +249,10 @@ export const useStore = create<StoreState>((set, get) => ({
     const body = text.trim();
     if (!selectedChat || !body) return;
     void get().markRead(selectedChat); // replying = actively reading
-    const chat = chats.find((c) => c.id === selectedChat);
+    // Linked person: route to default chat, or the chat of the last incoming
+    // message ("reply via originating service").
+    const targetChatId = resolveTargetChat(get());
+    const chat = chats.find((c) => c.id === targetChatId);
     const quoted = replyTo
       ? { id: replyTo.id, body: replyTo.body, sender: replyTo.sender, outgoing: replyTo.outgoing }
       : null;
@@ -233,7 +261,7 @@ export const useStore = create<StoreState>((set, get) => ({
     const optId = `opt-${now}-${Math.random().toString(36).slice(2, 6)}`;
     const opt: Message = {
       id: optId,
-      chatId: selectedChat,
+      chatId: targetChatId,
       accountId: chat?.accountId ?? '',
       date: clientDate(now),
       ts: now,
@@ -246,9 +274,9 @@ export const useStore = create<StoreState>((set, get) => ({
       quoted,
     };
     set({ messages: [...messages, opt], scrollNonce: get().scrollNonce + 1 });
-    bumpChat(selectedChat, opt, set);
+    bumpChat(targetChatId, opt, set);
     try {
-      const res = await api.send(selectedChat, body, quoted?.id);
+      const res = await api.send(targetChatId, body, quoted?.id);
       patchMessage(set, optId, { id: res.id || optId, status: 'sent' });
     } catch (e) {
       patchMessage(set, optId, { status: 'failed' });
@@ -262,12 +290,13 @@ export const useStore = create<StoreState>((set, get) => ({
     const body = text.trim();
     if (!selectedChat) return;
     void get().markRead(selectedChat);
-    const chat = chats.find((c) => c.id === selectedChat);
+    const targetChatId = resolveTargetChat(get());
+    const chat = chats.find((c) => c.id === targetChatId);
     const now = Date.now();
     const optId = `opt-mms-${now}-${Math.random().toString(36).slice(2, 6)}`;
     const opt: Message = {
       id: optId,
-      chatId: selectedChat,
+      chatId: targetChatId,
       accountId: chat?.accountId ?? '',
       date: clientDate(now),
       ts: now,
@@ -280,9 +309,9 @@ export const useStore = create<StoreState>((set, get) => ({
       media: previewUrl ? [{ url: previewUrl, contentType }] : undefined,
     };
     set({ messages: [...messages, opt], scrollNonce: get().scrollNonce + 1 });
-    bumpChat(selectedChat, opt, set);
+    bumpChat(targetChatId, opt, set);
     try {
-      const res = await api.sendMedia(selectedChat, body, file, contentType);
+      const res = await api.sendMedia(targetChatId, body, file, contentType);
       patchMessage(set, optId, { id: res.id || optId, status: 'sent' });
     } catch (e) {
       patchMessage(set, optId, { status: 'failed' });
@@ -340,11 +369,18 @@ export const useStore = create<StoreState>((set, get) => ({
   setReplyTo: (msg) => set({ replyTo: msg }),
 
   markRead: async (chatId: string) => {
+    const ids = isPersonSelection(chatId) ? memberChatIds(get()) : [chatId];
     set((s) => ({
-      chats: s.chats.map((c) => (c.id === chatId ? { ...c, unread: 0 } : c)),
+      chats: s.chats.map((c) => (ids.includes(c.id) ? { ...c, unread: 0 } : c)),
     }));
+    for (const id of ids) {
+      try {
+        await api.markRead(id);
+      } catch {
+        /* non-fatal */
+      }
+    }
     try {
-      await api.markRead(chatId);
       // Re-fetch to confirm — overrides any stale refresh that raced with us.
       await get().refreshChats();
     } catch {
@@ -358,7 +394,7 @@ export const useStore = create<StoreState>((set, get) => ({
 
   onMessage: async (msg) => {
     const { selectedChat, messages } = get();
-    if (msg.chatId === selectedChat) {
+    if (selectedChat && memberChatIds(get()).includes(msg.chatId)) {
       const byId = messages.findIndex((m) => m.id === msg.id);
       if (byId >= 0) {
         const next = [...messages];
@@ -434,6 +470,28 @@ export const useStore = create<StoreState>((set, get) => ({
 }));
 
 // ---------- helpers ----------
+
+/** Chat ids backing the current selection (member chats for a person). */
+function memberChatIds(s: StoreState): string[] {
+  const sel = s.selectedChat;
+  if (!sel) return [];
+  if (!isPersonSelection(sel)) return [sel];
+  const person = s.people.find((p) => `person:${p.id}` === sel);
+  return person?.chatIds ?? [];
+}
+
+/** Where an outgoing message should go for the current selection. */
+function resolveTargetChat(s: StoreState): string {
+  const sel = s.selectedChat ?? '';
+  if (!isPersonSelection(sel)) return sel;
+  const person = s.people.find((p) => `person:${p.id}` === sel);
+  if (!person) return sel;
+  if (person.sendMode === 'origin') {
+    const lastIncoming = [...s.messages].reverse().find((m) => m.outgoing === 0);
+    if (lastIncoming && person.chatIds.includes(lastIncoming.chatId)) return lastIncoming.chatId;
+  }
+  return person.defaultChatId ?? person.chatIds[0] ?? sel;
+}
 
 function setMyReaction(reactions: Message['reactions'], emoji: string) {
   const others = (reactions ?? []).filter((r) => r.from !== 'me');

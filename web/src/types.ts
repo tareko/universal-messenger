@@ -74,6 +74,16 @@ export interface Chat {
   lastMessage?: Message;
   /** Disappearing messages duration in seconds (0/undefined = off). */
   ephemeralSeconds?: number;
+  /** Set when this chat is linked into a person (identity group). */
+  personId?: number | null;
+}
+
+export interface Person {
+  id: number;
+  name: string;
+  defaultChatId: string | null;
+  sendMode: 'origin' | 'default';
+  chatIds: string[];
 }
 
 export interface Contact {
