@@ -475,16 +475,21 @@ export const useStore = create<StoreState>((set, get) => ({
 function memberChatIds(s: StoreState): string[] {
   const sel = s.selectedChat;
   if (!sel) return [];
-  if (!isPersonSelection(sel)) return [sel];
-  const person = s.people.find((p) => `person:${p.id}` === sel);
-  return person?.chatIds ?? [];
+  if (isPersonSelection(sel)) {
+    const person = s.people.find((p) => `person:${p.id}` === sel);
+    return person?.chatIds ?? [];
+  }
+  // A raw chat id may belong to a person — expand so the view merges live.
+  const person = s.people.find((p) => p.chatIds.includes(sel));
+  return person?.chatIds ?? [sel];
 }
 
 /** Where an outgoing message should go for the current selection. */
 function resolveTargetChat(s: StoreState): string {
   const sel = s.selectedChat ?? '';
-  if (!isPersonSelection(sel)) return sel;
-  const person = s.people.find((p) => `person:${p.id}` === sel);
+  const person = isPersonSelection(sel)
+    ? s.people.find((p) => `person:${p.id}` === sel)
+    : s.people.find((p) => p.chatIds.includes(sel));
   if (!person) return sel;
   if (person.sendMode === 'origin') {
     const lastIncoming = [...s.messages].reverse().find((m) => m.outgoing === 0);

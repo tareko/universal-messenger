@@ -27,7 +27,9 @@ export function Thread() {
   const typing = useStore((s) => s.typing);
   const person = useMemo(
     () =>
-      isPersonSelection(selectedChat) ? people.find((p) => `person:${p.id}` === selectedChat) : undefined,
+      isPersonSelection(selectedChat)
+        ? people.find((p) => `person:${p.id}` === selectedChat)
+        : people.find((p) => selectedChat != null && p.chatIds.includes(selectedChat)),
     [people, selectedChat]
   );
   const memberChats = useMemo(

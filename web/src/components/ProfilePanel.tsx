@@ -63,6 +63,8 @@ export function ProfilePanel({
       await fn();
       await refreshPeople();
       await refreshChats();
+      // The open thread may now span more chats — re-merge the stream.
+      await useStore.getState().refreshMessages();
     } finally {
       setBusy(false);
     }
