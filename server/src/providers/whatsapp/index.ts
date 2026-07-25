@@ -586,6 +586,18 @@ export class WhatsAppProvider implements Provider {
       if (!key.id) continue;
       const id = `${this.accountId}:${key.id}`;
 
+      // DM read/delivery receipts arrive as message status updates
+      // (group receipts come via message-receipt.update instead).
+      const st = Number(update.status);
+      if (st >= 1) {
+        const receiptStatus = st >= 3 ? 'read' : st >= 2 ? 'delivered' : 'sent';
+        if (updateMessageReceipt(id, receiptStatus)) {
+          const updated = getMessage(id);
+          if (updated) broadcast({ type: 'message-updated', data: updated });
+        }
+        continue;
+      }
+
       // Delete-for-everyone: Baileys translates the REVOKE protocol message
       // into update.message = null + messageStubType = REVOKE, with key.id
       // already pointing at the TARGET message. Leave a tombstone behind.
