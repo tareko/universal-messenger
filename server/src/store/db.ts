@@ -440,6 +440,17 @@ export function isDuplicateMessage(chatId: string, body: string, ts: number): bo
   );
 }
 
+/** Dedup provider sync-echoes of our own sends (same text within a minute). */
+export function isRecentOutgoing(chatId: string, body: string, ts: number, windowMs = 60000): boolean {
+  return Boolean(
+    getDb()
+      .prepare(
+        'SELECT 1 FROM messages WHERE chat_id = ? AND outgoing = 1 AND body = ? AND ts BETWEEN ? AND ? LIMIT 1'
+      )
+      .get(chatId, body, ts - windowMs, ts + windowMs)
+  );
+}
+
 /** Remove existing duplicate bubbles (keeps the first of each content group). */
 export function dedupMessages(): number {
   const res = getDb()

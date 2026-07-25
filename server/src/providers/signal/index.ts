@@ -3,6 +3,7 @@ import {
   addReaction,
   getMessage,
   getReactionsForMessage,
+  isRecentOutgoing,
   markMessageDeleted,
   removeReactions,
   setAccountStatus,
@@ -24,6 +25,8 @@ interface SignalEnvelope {
   sourceName?: string;
   timestamp?: number;
   dataMessage?: SignalDataMessage;
+  /** Device-sync echo of messages sent from the phone / other linked devices. */
+  syncMessage?: { sentMessage?: SignalDataMessage & { destination?: string; destinationNumber?: string } };
   typingMessage?: { action?: string; timestamp?: number };
   receiptMessage?: unknown;
 }
@@ -212,13 +215,40 @@ export class SignalProvider implements Provider {
         }
         return;
       }
-      const dm = env.dataMessage;
-      if (!dm) return;
+      // Device-sync echo of messages sent from the phone / other devices.
+      if (env.syncMessage?.sentMessage) {
+        await this.onDataMessage(env.syncMessage.sentMessage, env, {
+          outgoing: true,
+          destination: env.syncMessage.sentMessage.destinationNumber ?? env.syncMessage.sentMessage.destination,
+        });
+        return;
+      }
+      if (env.dataMessage) {
+        await this.onDataMessage(env.dataMessage, env, { outgoing: false });
+      }
+    } catch (e) {
+      console.error('[signal] envelope failed:', (e as Error).message);
+    }
+  }
 
-      const source = env.sourceNumber ?? env.source ?? '';
+  private async onDataMessage(
+    dm: SignalDataMessage,
+    env: SignalEnvelope,
+    opts: { outgoing: boolean; destination?: string }
+  ): Promise<void> {
+    if (!this.accountId) return;
+    const source = env.sourceNumber ?? env.source ?? '';
       const groupId = dm.groupInfo?.groupId;
-      const chatRemoteId = groupId ? `group.${groupId}` : source;
+      const chatRemoteId = groupId ? `group.${groupId}` : (opts.destination ?? source);
       const baseId = `${chatRemoteId}:${dm.timestamp}`;
+      if (!chatRemoteId) return;
+
+      // Our own send echoes also arrive via syncMessage — suppress dupes.
+      if (opts.outgoing && dm.timestamp && !dm.reaction && !dm.editMessage && !dm.remoteDelete) {
+        if (isRecentOutgoing(`${this.accountId}:${chatRemoteId}`, dm.message ?? '', dm.timestamp)) {
+          return;
+        }
+      }
 
       // Delete-for-everyone.
       if (dm.remoteDelete?.timestamp) {
@@ -294,19 +324,16 @@ export class SignalProvider implements Provider {
           chatRemoteId,
           chatType: groupId ? 'group' : 'dm',
           chatTitle: dm.groupInfo?.name,
-          contactRaw: env.sourceName ?? source,
+          contactRaw: opts.outgoing ? (opts.destination ?? '') : (env.sourceName ?? source),
           sender: groupId ? (env.sourceName ?? source) : undefined,
           ts: dm.timestamp || Date.now(),
-          outgoing: false,
+          outgoing: opts.outgoing,
           body: text,
           media,
           quotedRemoteId: dm.quote?.id ? `${chatRemoteId}:${dm.quote.id}` : undefined,
         },
-        'poll'
+        opts.outgoing ? 'send' : 'poll'
       );
-    } catch (e) {
-      console.error('[signal] envelope failed:', (e as Error).message);
-    }
   }
 
   // ---------- outbound ----------

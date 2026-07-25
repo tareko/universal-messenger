@@ -33,6 +33,10 @@ export function ChatList() {
   );
 
   const hasVoipMs = accounts.some((a) => a.provider === 'voipms');
+  // The voip.ms 90-day backfill only applies to SMS accounts (other providers
+  // page back via thread scroll). Show it only when relevant.
+  const showSmsBackfill =
+    hasVoipMs && (selectedAccount === 'all' || selectedAccount.startsWith('voipms:'));
   const channelCount = chats.filter((c) => c.type === 'channel').length;
 
   useEffect(() => {
@@ -269,7 +273,7 @@ export function ChatList() {
           <div className="empty-hint">No chats yet. Search a contact to start one.</div>
         )}
 
-        {!showingSearch && hasVoipMs && (
+        {!showingSearch && showSmsBackfill && (
           <button
             className="load-more-btn"
             disabled={loadingMore || exhausted}
