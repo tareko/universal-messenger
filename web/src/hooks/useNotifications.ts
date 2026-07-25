@@ -3,6 +3,21 @@ import { useStore } from '../store';
 
 let permissionAsked = false;
 
+/** Per-chat unread counters for stealth-mode notifications. */
+const stealthCounts = new Map<string, number>();
+
+// Reset a chat's counter when it becomes the open chat (member chats too
+// when a linked person is opened).
+useStore.subscribe((s, prev) => {
+  if (s.selectedChat && s.selectedChat !== prev.selectedChat) {
+    stealthCounts.delete(s.selectedChat);
+    const person = s.people.find(
+      (p) => `person:${p.id}` === s.selectedChat || p.chatIds.includes(s.selectedChat!)
+    );
+    for (const id of person?.chatIds ?? []) stealthCounts.delete(id);
+  }
+});
+
 export function requestNotificationPermission() {
   if (permissionAsked || typeof Notification === 'undefined') return;
   permissionAsked = true;
@@ -24,12 +39,18 @@ export function notifyNewMessage(msg: Message, selectedChat: string | null) {
     document.visibilityState === 'visible' && selectedChat === msg.chatId;
   if (isFocusedChat) return;
 
-  // Privacy mode: no sender or content in the notification.
+  // Privacy mode: sender + count, never the content.
   const stealth = localStorage.getItem('um-hide-previews') === '1';
-  const n = new Notification(stealth ? 'New message' : displayName(msg), {
-    body: stealth ? '' : msg.body || (msg.media?.length ? '📎 Attachment' : ''),
-    tag: `um-${msg.chatId}`,
-  });
+  const name = displayName(msg);
+  let title = name;
+  let body: string = msg.body || (msg.media?.length ? '📎 Attachment' : '');
+  if (stealth) {
+    const n = (stealthCounts.get(msg.chatId) ?? 0) + 1;
+    stealthCounts.set(msg.chatId, n);
+    title = name;
+    body = `${n} new message${n === 1 ? '' : 's'}`;
+  }
+  const n = new Notification(title, { body, tag: `um-${msg.chatId}` });
   n.onclick = () => {
     window.focus();
     void useStore.getState().selectChat(msg.chatId);
