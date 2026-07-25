@@ -69,7 +69,12 @@ export function ChatList() {
   }, [query]);
 
   const filteredChats = useMemo(() => {
-    const byTab = chats.filter((c) => (tab === 'channels' ? c.type === 'channel' : c.type !== 'channel'));
+    const byTab = chats.filter((c) => {
+      if (tab === 'channels') return c.type === 'channel';
+      if (tab === 'groups') return c.type === 'group';
+      // Main: dms + pinned groups (groups default to the Groups tab).
+      return c.type === 'dm' || (c.type === 'group' && Boolean(c.pinned));
+    });
     const q = query.trim().toLowerCase();
     if (!q) return byTab;
     return byTab.filter(
