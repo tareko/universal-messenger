@@ -13,6 +13,7 @@ import type { ReactNode } from 'react';
 interface Block {
   code?: string;
   text?: string;
+  quote?: string;
 }
 
 function splitCodeBlocks(text: string): Block[] {
@@ -26,6 +27,37 @@ function splitCodeBlocks(text: string): Block[] {
     last = m.index + m[0].length;
   }
   if (last < text.length) out.push({ text: text.slice(last) });
+  return out;
+}
+
+/** Group consecutive "> " lines into quote blocks (fallback quote format). */
+function splitQuoteLines(text: string): Block[] {
+  const out: Block[] = [];
+  let quote: string[] = [];
+  let normal: string[] = [];
+  const flushQ = () => {
+    if (quote.length) {
+      out.push({ quote: quote.join('\n') });
+      quote = [];
+    }
+  };
+  const flushN = () => {
+    if (normal.length) {
+      out.push({ text: normal.join('\n') });
+      normal = [];
+    }
+  };
+  for (const line of text.split('\n')) {
+    if (line === '>' || line.startsWith('> ')) {
+      flushN();
+      quote.push(line.replace(/^> ?/, ''));
+    } else {
+      flushQ();
+      normal.push(line);
+    }
+  }
+  flushQ();
+  flushN();
   return out;
 }
 
@@ -72,11 +104,18 @@ function inline(text: string, provider: string, keyBase: number): ReactNode[] {
 }
 
 export function Formatted({ text, provider }: { text: string; provider: string }) {
-  const blocks = splitCodeBlocks(text);
+  // Split "> " quote lines first, then code blocks + inline per segment.
+  const segments = splitQuoteLines(text).flatMap((seg) =>
+    seg.quote !== undefined ? [seg] : splitCodeBlocks(seg.text ?? '')
+  );
   return (
     <>
-      {blocks.map((b, i) =>
-        b.code !== undefined ? (
+      {segments.map((b, i) =>
+        b.quote !== undefined ? (
+          <div key={i} className="md-quote" dir="auto">
+            {inline(b.quote, provider, i)}
+          </div>
+        ) : b.code !== undefined ? (
           <pre key={i} className="md-pre">
             <code>{b.code}</code>
           </pre>

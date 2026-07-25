@@ -756,3 +756,10 @@ body {
 .md-link { color: #34b7f1; text-decoration: none; word-break: break-all; }
 .md-link:hover { text-decoration: underline; }
 .bubble.out .md-link { color: #9fdcf8; }
+
+.md-quote {
+  border-left: 3px solid var(--accent);
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 6px; padding: 4px 8px; margin: 4px 0;
+  color: var(--text-muted); font-size: 13px;
+}
