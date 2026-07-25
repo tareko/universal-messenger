@@ -248,12 +248,12 @@ body {
 .bubble-wrap.out .react-trigger { right: -10px; }
 
 .react-bar {
-  position: absolute; bottom: 100%; margin-bottom: 6px; z-index: 40;
+  position: absolute; bottom: calc(100% + 6px); z-index: 40;
   display: flex; gap: 2px; background: #fff; border: 1px solid var(--border);
   border-radius: 18px; padding: 4px 6px; box-shadow: 0 4px 14px rgba(0,0,0,0.18);
 }
-.bubble-row.in .react-bar { left: 0; }
-.bubble-row.out .react-bar { right: 0; }
+.hover-actions.in .react-bar { left: -4px; }
+.hover-actions.out .react-bar { right: -4px; }
 .react-bar-emoji {
   font-size: 18px; background: transparent; border: none; cursor: pointer;
   padding: 2px 5px; border-radius: 50%;

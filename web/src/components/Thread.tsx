@@ -475,35 +475,6 @@ function Bubble({
       onMouseLeave={() => setHover(false)}
       onDoubleClick={onRowDoubleClick}
     >
-      {picker && !morePicker && (
-        <>
-          <div className="react-backdrop" onClick={() => setPicker(false)} />
-          <div className={`react-bar ${incoming ? 'in' : 'out'}`}>
-            {emojiSet.map((e) => (
-              <button
-                key={e}
-                className="react-bar-emoji"
-                title={e}
-                onClick={() => {
-                  onReact(e);
-                  setPicker(false);
-                }}
-              >
-                {e}
-              </button>
-            ))}
-            {allowMore && (
-              <button
-                className="react-bar-emoji react-bar-more"
-                title="More emojis"
-                onClick={() => setMorePicker(true)}
-              >
-                ➕
-              </button>
-            )}
-          </div>
-        </>
-      )}
       {picker && morePicker && (
         <>
           <div className="react-backdrop" onClick={() => { setMorePicker(false); setPicker(false); }} />
@@ -520,18 +491,50 @@ function Bubble({
         </>
       )}
 
+      {picker && !morePicker && (
+        <div className="react-backdrop" onClick={() => setPicker(false)} />
+      )}
       <div className={`bubble-wrap ${incoming ? 'in' : 'out'}`}>
-        {hover && !picker && (canReact || canForward) && (
+        {hover && (canReact || canForward) && (
           <div className={`hover-actions ${incoming ? 'in' : 'out'}`}>
-            {canReact && (
-              <button className="action-btn" title="React" onClick={() => setPicker(true)}>
-                😀
-              </button>
-            )}
-            {canForward && (
-              <button className="action-btn" title="Forward" onClick={onForward}>
-                ↪
-              </button>
+            {picker && !morePicker ? (
+              <div className="react-bar anchored">
+                {emojiSet.map((e) => (
+                  <button
+                    key={e}
+                    className="react-bar-emoji"
+                    title={e}
+                    onClick={() => {
+                      onReact(e);
+                      setPicker(false);
+                    }}
+                  >
+                    {e}
+                  </button>
+                ))}
+                {allowMore && (
+                  <button
+                    className="react-bar-emoji react-bar-more"
+                    title="More emojis"
+                    onClick={() => setMorePicker(true)}
+                  >
+                    ➕
+                  </button>
+                )}
+              </div>
+            ) : (
+              <>
+                {canReact && (
+                  <button className="action-btn" title="React" onClick={() => setPicker(true)}>
+                    😀
+                  </button>
+                )}
+                {canForward && (
+                  <button className="action-btn" title="Forward" onClick={onForward}>
+                    ↪
+                  </button>
+                )}
+              </>
             )}
           </div>
         )}
