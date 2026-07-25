@@ -1,5 +1,15 @@
 import type { Message } from '../types';
 
+import type { Message } from '../types';
+
+const PROVIDER_NAME: Record<string, string> = {
+  whatsapp: 'WhatsApp',
+  signal: 'Signal',
+  telegram: 'Telegram',
+  voipms: 'SMS',
+  mattermost: 'Mattermost',
+};
+
 /**
  * Outgoing status: ⏳ sending · ✓ sent to server · ✓✓ delivered · ✓✓ blue read
  * (receipt states only exist where the provider supports them — WhatsApp,
@@ -25,16 +35,33 @@ export function MessageStatus({
             ? 'delivered'
             : 'sent';
 
+  const provider = PROVIDER_NAME[msg.accountId.split(':')[0]] ?? 'the service';
   const label =
     icon === 'sending'
       ? 'Sending… (clock = still sending)'
       : icon === 'failed'
         ? `Failed to send${msg.error ? `: ${msg.error}` : ''} (click to retry)`
         : icon === 'read'
-          ? 'Read by recipient'
+          ? `Read by recipient (${provider})`
           : icon === 'delivered'
-            ? 'Received by recipient'
-            : 'Sent to server';
+            ? `Received by recipient (${provider})`
+            : `Sent to ${provider} server`;
+
+  const clickable = icon === 'failed' && onRetry && !msg.media?.length;
+  return (
+    <span
+      className={`msg-status ${icon}${clickable ? ' clickable' : ''}`}
+      data-tooltip={label}
+      title={label}
+      onClick={clickable ? () => onRetry(msg) : undefined}
+    >
+      {icon === 'sending' && <ClockSvg />}
+      {icon === 'sent' && <CheckSvg />}
+      {(icon === 'delivered' || icon === 'read') && <ChecksSvg blue={icon === 'read'} />}
+      {icon === 'failed' && <span className="msg-status-glyph">⚠</span>}
+    </span>
+  );
+}
 
   const clickable = icon === 'failed' && onRetry && !msg.media?.length;
   return (
