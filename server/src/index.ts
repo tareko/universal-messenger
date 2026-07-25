@@ -23,10 +23,22 @@ async function main() {
     addClient(res);
   });
 
-  // Serve the built React UI (web/dist)
+  // Serve the built React UI (web/dist). index.html must always revalidate
+  // (it references hashed assets); hashed assets are immutable forever.
   if (existsSync(config.webDir)) {
-    app.use(express.static(config.webDir));
+    app.use(
+      express.static(config.webDir, {
+        setHeaders: (res, path) => {
+          if (path.endsWith('index.html')) {
+            res.setHeader('Cache-Control', 'no-cache');
+          } else {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          }
+        },
+      })
+    );
     app.get('*', (_req, res) => {
+      res.setHeader('Cache-Control', 'no-cache');
       res.sendFile('index.html', { root: config.webDir });
     });
   } else {
