@@ -41,6 +41,7 @@ import {
   setProviderAccountsStatus,
   updateMessageBody,
   updateMessageMedia,
+  updateMessageReceipt,
   upsertAccount,
 } from '../../store/db.js';
 import { saveMediaBuffer, saveUploadedMedia } from '../../services/media.js';
@@ -147,7 +148,28 @@ export class WhatsAppProvider implements Provider {
     sock.ev.on('chats.upsert', (chats) => {
       for (const c of chats) void syncEphemeral(c.id, c.ephemeralExpiration);
     });
-    // Typing indicators from contacts.
+    // Read/delivery receipts for our outgoing messages.
+    sock.ev.on('message-receipt.update', (updates) => {
+      if (!this.accountId) return;
+      for (const { key, receipt } of updates) {
+        try {
+          if (!key.id) continue;
+          const id = `${this.accountId}:${key.id}`;
+          const status = receipt.readTimestamp
+            ? 'read'
+            : receipt.deliveredDeviceJid?.length || receipt.receiptTimestamp
+              ? 'delivered'
+              : null;
+          if (!status) continue;
+          if (updateMessageReceipt(id, status)) {
+            const updated = getMessage(id);
+            if (updated) broadcast({ type: 'message-updated', data: updated });
+          }
+        } catch {
+          /* skip individual receipts */
+        }
+      }
+    });
     sock.ev.on('presence.update', ({ id, presences }) => {
       if (!this.accountId) return;
       void (async () => {

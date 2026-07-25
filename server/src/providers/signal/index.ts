@@ -8,6 +8,7 @@ import {
   removeReactions,
   setAccountStatus,
   updateMessageBody,
+  updateMessageReceipt,
   upsertAccount,
 } from '../../store/db.js';
 import { saveMediaBuffer, saveUploadedMedia } from '../../services/media.js';
@@ -28,7 +29,7 @@ interface SignalEnvelope {
   /** Device-sync echo of messages sent from the phone / other linked devices. */
   syncMessage?: { sentMessage?: SignalDataMessage & { destination?: string; destinationNumber?: string } };
   typingMessage?: { action?: string; timestamp?: number };
-  receiptMessage?: unknown;
+  receiptMessage?: { type?: string; timestamps?: number[] };
 }
 interface SignalDataMessage {
   timestamp: number;
@@ -214,6 +215,19 @@ export class SignalProvider implements Provider {
       if (env.typingMessage) {
         if (env.typingMessage.action === 'STARTED' && env.sourceNumber) {
           broadcastTyping(`${this.accountId}:${env.sourceNumber}`, env.sourceName ?? null);
+        }
+        return;
+      }
+      // Read/delivery receipts for our outgoing messages.
+      if (env.receiptMessage?.timestamps?.length) {
+        const status = env.receiptMessage.type === 'READ' ? 'read' : 'delivered';
+        const source = env.sourceNumber ?? env.source ?? '';
+        for (const ts of env.receiptMessage.timestamps) {
+          const id = `${this.accountId}:${source}:${ts}`;
+          if (updateMessageReceipt(id, status)) {
+            const updated = getMessage(id);
+            if (updated) broadcast({ type: 'message-updated', data: updated });
+          }
         }
         return;
       }

@@ -769,3 +769,6 @@ body {
   border-radius: 6px; padding: 4px 8px; margin: 4px 0;
   font-size: 14px; color: inherit;
 }
+
+.msg-status-svg.blue { color: #34b7f1; }
+.msg-status.delivered, .msg-status.read { display: inline-flex; }

@@ -2,7 +2,7 @@ import { TelegramClient, Api } from 'telegram';
 import { StringSession } from 'telegram/sessions';
 import { NewMessage, Raw } from 'telegram/events';
 import type { Entity } from 'telegram/define';
-import { getKv, setKv } from '../../store/db.js';
+import { getKv, setKv, getDb } from '../../store/db.js';
 import {
   addReaction,
   clearReactions,
@@ -17,6 +17,7 @@ import {
   setName,
   setProviderAccountsStatus,
   updateMessageBody,
+  updateMessageReceipt,
   upsertAccount,
 } from '../../store/db.js';
 import { saveMediaBuffer, saveUploadedMedia } from '../../services/media.js';
@@ -317,6 +318,7 @@ export class TelegramProvider implements Provider {
           Api.UpdateUserTyping,
           Api.UpdateChatUserTyping,
           Api.UpdateChannelUserTyping,
+          Api.UpdateReadHistoryOutbox,
         ],
       })
     );
@@ -348,6 +350,23 @@ export class TelegramProvider implements Provider {
       if (update instanceof Api.UpdateDeleteChannelMessages) {
         for (const msgId of update.messages) {
           this.deleteBySuffix(`channel:${update.channelId}:${msgId}`);
+        }
+        return;
+      }
+      if (update instanceof Api.UpdateReadHistoryOutbox) {
+        // The peer read our outgoing messages up to maxId.
+        const chatRemoteId = peerKey(update.peer);
+        const chatId = `${this.accountId}:${chatRemoteId}`;
+        const rows = getDb()
+          .prepare("SELECT id FROM messages WHERE chat_id = ? AND outgoing = 1 AND receipt != 'read'")
+          .all(chatId) as { id: string }[];
+        const maxId = Number(update.maxId);
+        for (const row of rows) {
+          const msgId = Number(row.id.split(':').pop());
+          if (msgId && msgId <= maxId && updateMessageReceipt(row.id, 'read')) {
+            const updated = getMessage(row.id);
+            if (updated) broadcast({ type: 'message-updated', data: updated });
+          }
         }
         return;
       }

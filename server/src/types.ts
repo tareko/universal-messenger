@@ -49,6 +49,8 @@ export interface Message {
   edited?: number;
   /** 1 = delete-for-everyone tombstone (body/media blanked). */
   deleted?: number;
+  /** Outgoing receipt status: 'sent' | 'delivered' | 'read' (providers that support it). */
+  receipt?: string;
   reactions?: ReactionRef[];
   /** Hydrated quote preview (resolved at query time). */
   quoted?: {

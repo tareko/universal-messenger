@@ -48,6 +48,8 @@ export interface Message {
   edited?: number;
   /** 1 = delete-for-everyone tombstone (body/media blanked). */
   deleted?: number;
+  /** Outgoing receipt status: 'sent' | 'delivered' | 'read' (where supported). */
+  receipt?: string;
   reactions?: ReactionRef[];
   quoted?: {
     id: string;

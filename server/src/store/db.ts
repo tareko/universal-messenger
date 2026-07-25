@@ -150,6 +150,12 @@ export function initDb() {
   } catch {
     /* column exists */
   }
+  // Read receipts for outgoing messages: '' | 'sent' | 'delivered' | 'read'.
+  try {
+    db.exec("ALTER TABLE messages ADD COLUMN receipt TEXT NOT NULL DEFAULT ''");
+  } catch {
+    /* column exists */
+  }
   return db;
 }
 
@@ -428,6 +434,7 @@ function rowToMessage(r: Record<string, unknown>): Message {
     media: parseMedia(r.media),
     mediaPending: Boolean(r.media_pending),
     deleted: Number(r.deleted ?? 0),
+    receipt: r.receipt ? String(r.receipt) : undefined,
     quotedId: r.quoted_id ? String(r.quoted_id) : null,
     forwardedFrom: r.forwarded_from ? String(r.forwarded_from) : null,
     edited: Number(r.edited ?? 0),
@@ -527,6 +534,29 @@ export function updateMessageMedia(id: string, media: MediaRef[]): void {
   getDb()
     .prepare('UPDATE messages SET media = ?, media_pending = NULL WHERE id = ?')
     .run(JSON.stringify(media), id);
+}
+
+const RECEIPT_RANK: Record<string, number> = { '': 0, sent: 1, delivered: 2, read: 3 };
+
+/** Advance a message's receipt status (monotonic: never downgrades). */
+export function updateMessageReceipt(id: string, status: 'sent' | 'delivered' | 'read'): boolean {
+  const row = getDb().prepare('SELECT receipt FROM messages WHERE id = ?').get(id) as
+    | { receipt: string }
+    | undefined;
+  if (!row) return false;
+  if ((RECEIPT_RANK[status] ?? 0) > (RECEIPT_RANK[row.receipt] ?? 0)) {
+    getDb().prepare('UPDATE messages SET receipt = ? WHERE id = ?').run(status, id);
+    return true;
+  }
+  return false;
+}
+
+/** Mark all outgoing messages in a chat up to a timestamp as read. */
+export function markReceiptsReadUpTo(chatIdArg: string, maxTs: number): number {
+  const res = getDb()
+    .prepare("UPDATE messages SET receipt = 'read' WHERE chat_id = ? AND outgoing = 1 AND ts <= ? AND receipt != 'read'")
+    .run(chatIdArg, maxTs);
+  return res.changes;
 }
 
 export function getMessages(chatIdArg: string, limit = 100, before?: number): Message[] {
