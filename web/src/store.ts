@@ -513,6 +513,8 @@ function resolveTargetChat(s: StoreState, override?: string): string {
     : s.people.find((p) => p.chatIds.includes(sel));
   if (!person) return sel;
   if (person.sendMode === 'origin') {
+    // Quote-replying? Route to the service the quoted message arrived on.
+    if (s.replyTo && person.chatIds.includes(s.replyTo.chatId)) return s.replyTo.chatId;
     const lastIncoming = [...s.messages].reverse().find((m) => m.outgoing === 0);
     if (lastIncoming && person.chatIds.includes(lastIncoming.chatId)) return lastIncoming.chatId;
   }
