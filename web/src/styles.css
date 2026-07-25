@@ -763,3 +763,10 @@ body {
   border-radius: 6px; padding: 4px 8px; margin: 4px 0;
   color: var(--text-muted); font-size: 13px;
 }
+
+/* Quote-only messages: full-strength text, border only (no muted tint) */
+.md-quote-full {
+  border-left: 3px solid var(--accent);
+  border-radius: 6px; padding: 4px 8px; margin: 4px 0;
+  font-size: 14px; color: inherit;
+}

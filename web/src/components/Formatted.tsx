@@ -108,11 +108,15 @@ export function Formatted({ text, provider }: { text: string; provider: string }
   const segments = splitQuoteLines(text).flatMap((seg) =>
     seg.quote !== undefined ? [seg] : splitCodeBlocks(seg.text ?? '')
   );
+  // A message that is ENTIRELY a quote renders at full strength (it's the
+  // content, not a reference); a quote followed by the sender's own text
+  // stays muted.
+  const quoteOnly = segments.length > 0 && segments.every((b) => b.quote !== undefined);
   return (
     <>
       {segments.map((b, i) =>
         b.quote !== undefined ? (
-          <div key={i} className="md-quote" dir="auto">
+          <div key={i} className={quoteOnly ? 'md-quote-full' : 'md-quote'} dir="auto">
             {inline(b.quote, provider, i)}
           </div>
         ) : b.code !== undefined ? (
