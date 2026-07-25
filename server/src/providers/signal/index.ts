@@ -184,7 +184,9 @@ export class SignalProvider implements Provider {
 
   private connectWs(): void {
     if (!this.number) return;
-    const wsUrl = `${this.base.replace(/^http/, 'ws')}/api/v1/events`;
+    // Receiving is a WebSocket at /v1/receive/{number} (the /api/v1/events
+    // path from older docs doesn't exist on this sidecar version).
+    const wsUrl = `${this.base.replace(/^http/, 'ws')}/v1/receive/${encodeURIComponent(this.number)}`;
     const ws = new WebSocket(wsUrl);
     this.ws = ws;
     this.stopped = false;
