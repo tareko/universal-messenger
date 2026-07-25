@@ -5,6 +5,7 @@ import { Avatar } from './Avatar';
 import { MessageStatus } from './MessageStatus';
 import { ForwardDialog } from './ForwardDialog';
 import { EmojiPicker } from './EmojiPicker';
+import { Formatted } from './Formatted';
 import { ProfilePanel } from './ProfilePanel';
 import { providerBadge } from './AccountSwitcher';
 import type { Message } from '../types';
@@ -546,9 +547,13 @@ function Bubble({
                   : (msg.quoted.senderName ?? formatNumber(msg.quoted.sender ?? ''))}
               </div>
               <div className="bubble-quote-text" dir="auto">
-                {msg.quoted.deleted
-                  ? '🚫 This message was deleted'
-                  : msg.quoted.body || '📎 Attachment'}
+                {msg.quoted.deleted ? (
+                  '🚫 This message was deleted'
+                ) : msg.quoted.body ? (
+                  <Formatted text={msg.quoted.body} provider={msg.accountId.split(':')[0]} />
+                ) : (
+                  '📎 Attachment'
+                )}
               </div>
             </div>
           )}
@@ -594,7 +599,11 @@ function Bubble({
               </a>
             </div>
           ))}
-          {caption && <span className="bubble-text" dir="auto">{caption}</span>}
+          {caption && (
+            <span className="bubble-text" dir="auto">
+              <Formatted text={caption} provider={msg.accountId.split(':')[0]} />
+            </span>
+          )}
           {caption && !hasMedia && URL_RE.test(caption) && <LinkPreview messageId={msg.id} />}
           <span className="bubble-meta">
             {showProvider && (
