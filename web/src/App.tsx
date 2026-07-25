@@ -4,6 +4,7 @@ import { useSSE } from './hooks/useSSE';
 import { requestNotificationPermission } from './hooks/useNotifications';
 import { AccountSwitcher } from './components/AccountSwitcher';
 import { AccountsDialog } from './components/AccountsDialog';
+import { NotificationsDialog } from './components/NotificationsDialog';
 import { ChatList } from './components/ChatList';
 import { Thread } from './components/Thread';
 import { Composer } from './components/Composer';
@@ -17,6 +18,7 @@ export function App() {
   const error = useStore((s) => s.error);
   const selectedChat = useStore((s) => s.selectedChat);
   const [accountsOpen, setAccountsOpen] = useState(false);
+  const [notifyOpen, setNotifyOpen] = useState(false);
 
   useEffect(() => {
     void init();
@@ -32,7 +34,7 @@ export function App() {
           </button>
         </header>
         <ChatList />
-        <StatusBar status={status} sseStatus={sseStatus} />
+        <StatusBar status={status} sseStatus={sseStatus} onOpenNotify={() => setNotifyOpen(true)} />
       </aside>
 
       <main className="main">
@@ -43,6 +45,7 @@ export function App() {
       </main>
 
       {accountsOpen && <AccountsDialog onClose={() => setAccountsOpen(false)} />}
+      {notifyOpen && <NotificationsDialog onClose={() => setNotifyOpen(false)} />}
     </div>
   );
 }
@@ -50,9 +53,11 @@ export function App() {
 function StatusBar({
   status,
   sseStatus,
+  onOpenNotify,
 }: {
   status: ReturnType<typeof useStore.getState>['status'];
   sseStatus: 'connecting' | 'connected';
+  onOpenNotify: () => void;
 }) {
   const [stealth, setStealth] = useState(() => localStorage.getItem('um-hide-previews') === '1');
   if (!status) return null;
@@ -68,6 +73,9 @@ function StatusBar({
 
   return (
     <footer className="status-bar">
+      <button className="stealth-toggle" title="Notification settings" onClick={onOpenNotify}>
+        🔔
+      </button>
       <span>
         <span className={`sse-dot ${sseStatus}`} />
         {sseStatus === 'connected' ? 'Live' : 'Reconnecting'}

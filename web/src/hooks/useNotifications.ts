@@ -39,6 +39,22 @@ export function notifyNewMessage(msg: Message, selectedChat: string | null) {
     document.visibilityState === 'visible' && selectedChat === msg.chatId;
   if (isFocusedChat) return;
 
+  const s = useStore.getState();
+  // Fine-grained rules: muted chat/person, per-provider toggles.
+  if (s.notifySettings.mutedChats.includes(msg.chatId)) return;
+  const person = s.people.find((p) => p.chatIds.includes(msg.chatId));
+  if (person && s.notifySettings.mutedChats.includes(`person:${person.id}`)) return;
+  const provider = msg.accountId.split(':')[0];
+  const chat = s.chats.find((c) => c.id === msg.chatId);
+  const rules = s.notifySettings.providers[provider];
+  if (rules) {
+    if (!rules.enabled) return;
+    const type = chat?.type ?? 'dm';
+    if (type === 'dm' && !rules.dm) return;
+    if (type === 'group' && !rules.group) return;
+    if (type === 'channel' && !rules.channel) return;
+  }
+
   // Privacy mode: sender + count, never the content.
   const stealth = localStorage.getItem('um-hide-previews') === '1';
   const name = displayName(msg);

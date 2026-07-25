@@ -1,4 +1,4 @@
-import type { Account, AppStatus, Chat, Contact, Message, Person } from './types';
+import type { Account, AppStatus, Chat, Contact, Message, NotifySettings, Person } from './types';
 
 const base = '/api';
 
@@ -109,6 +109,16 @@ export const api = {
   signalQrcode: () => getJson<{ qr: string | null }>('/providers/signal/qrcode'),
   signalLink: () => postJson<{ ok: boolean }>('/providers/signal/link', {}),
   signalDisconnect: () => postJson<{ ok: boolean }>('/providers/signal/disconnect', {}),
+  notifySettings: () => getJson<NotifySettings>('/notify-settings'),
+  saveNotifySettings: (s: NotifySettings) =>
+    fetch(`${base}/notify-settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify(s),
+    }).then(async (r) => {
+      if (!r.ok) throw new Error(await errorMessage(r));
+      return (await r.json()) as { ok: boolean };
+    }),
   chats: (accountId?: string) =>
     getJson<Chat[]>(accountId ? `/chats?account=${encodeURIComponent(accountId)}` : '/chats'),
   newChat: (accountId: string, to: string) =>

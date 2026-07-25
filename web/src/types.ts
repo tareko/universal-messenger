@@ -88,6 +88,18 @@ export interface Person {
   chatIds: string[];
 }
 
+export interface ProviderNotifyRules {
+  enabled: boolean;
+  dm: boolean;
+  group: boolean;
+  channel: boolean;
+}
+
+export interface NotifySettings {
+  providers: Record<string, ProviderNotifyRules>;
+  mutedChats: string[];
+}
+
 export interface Contact {
   tel: string;
   name: string;

@@ -36,6 +36,7 @@ import { TelegramProvider } from '../providers/telegram/index.js';
 import { MattermostProvider } from '../providers/mattermost/index.js';
 import { SignalProvider } from '../providers/signal/index.js';
 import { syncContacts, getCarddavStatus } from '../contacts/carddav.js';
+import { getNotifySettings, saveNotifySettings, type NotifySettings } from '../notify/settings.js';
 import { broadcast } from '../realtime/sse.js';
 import { getMediaPath, mediaContentType, saveUploadedMedia, loadMediaBuffer } from '../services/media.js';
 import { backfillReactions } from '../services/backfill.js';
@@ -332,6 +333,21 @@ api.post('/providers/signal/disconnect', async (_req, res) => {
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
+});
+
+/** Fine-grained notification settings (per-provider rules + muted chats). */
+api.get('/notify-settings', (_req, res) => {
+  res.json(getNotifySettings());
+});
+
+api.put('/notify-settings', (req, res) => {
+  const body = req.body as NotifySettings;
+  if (!body || typeof body !== 'object') return res.status(400).json({ error: 'settings required' });
+  saveNotifySettings({
+    providers: body.providers ?? {},
+    mutedChats: Array.isArray(body.mutedChats) ? body.mutedChats : [],
+  });
+  res.json({ ok: true });
 });
 
 api.get('/status', (_req, res) => {

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { api } from './api';
-import type { Account, AppStatus, Chat, Message, Person } from './types';
+import type { Account, AppStatus, Chat, Message, NotifySettings, Person } from './types';
 
 export function isPersonSelection(sel: string | null): boolean {
   return sel?.startsWith('person:') ?? false;
@@ -15,6 +15,7 @@ interface StoreState {
 
   chats: Chat[];
   people: Person[];
+  notifySettings: NotifySettings;
   selectedChat: string | null; // chat id, or 'person:<id>' for a linked person
   messages: Message[];
   replyTo: Message | null; // message being quoted in the composer
@@ -38,6 +39,8 @@ interface StoreState {
   openNewChat: (to: string) => Promise<void>;
   refreshChats: () => Promise<void>;
   refreshPeople: () => Promise<void>;
+  saveNotifySettings: (s: NotifySettings) => Promise<void>;
+  toggleMute: (key: string) => Promise<void>;
   refreshMessages: () => Promise<void>;
   loadOlderMessages: () => Promise<void>;
   backfillHistory: () => Promise<{ newMessages: number; reachedLimit: boolean }>;
@@ -70,6 +73,7 @@ export const useStore = create<StoreState>((set, get) => ({
   selectedAccount: 'all',
   chats: [],
   people: [],
+  notifySettings: { providers: {}, mutedChats: [] },
   selectedChat: null,
   messages: [],
   replyTo: null,
@@ -87,8 +91,8 @@ export const useStore = create<StoreState>((set, get) => ({
     try {
       const status = await api.status();
       const accounts = status.accounts?.length ? status.accounts : await api.accounts();
-      const people = await api.people();
-      set({ status, accounts, people, loading: false });
+      const [people, notifySettings] = await Promise.all([api.people(), api.notifySettings()]);
+      set({ status, accounts, people, notifySettings, loading: false });
       await get().refreshChats();
     } catch (e) {
       set({ loading: false, error: (e as Error).message });
@@ -172,6 +176,25 @@ export const useStore = create<StoreState>((set, get) => ({
     } catch {
       /* non-fatal */
     }
+  },
+
+  saveNotifySettings: async (s: NotifySettings) => {
+    set({ notifySettings: s });
+    try {
+      await api.saveNotifySettings(s);
+    } catch (e) {
+      set({ error: (e as Error).message });
+    }
+  },
+
+  /** Mute/unmute a chat ('<chatId>') or person ('person:<id>'). */
+  toggleMute: async (key: string) => {
+    const { notifySettings } = get();
+    const muted = notifySettings.mutedChats.includes(key);
+    const mutedChats = muted
+      ? notifySettings.mutedChats.filter((c) => c !== key)
+      : [...notifySettings.mutedChats, key];
+    await get().saveNotifySettings({ ...notifySettings, mutedChats });
   },
 
   refreshMessages: async () => {

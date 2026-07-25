@@ -725,3 +725,20 @@ body {
 .send-target-check { color: var(--accent); font-weight: 700; }
 
 .send-target-badge { margin-left: 6px; color: #fff; border-color: rgba(255,255,255,0.5); }
+
+/* ---------- Notification settings ---------- */
+.muted-bell { margin-left: 6px; font-size: 13px; opacity: 0.8; }
+.notify-provider { padding: 10px 16px; border-bottom: 1px solid var(--border); }
+.notify-provider-head {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 14px; font-weight: 500; cursor: pointer;
+}
+.notify-provider-name { flex: 1; }
+.notify-provider-types {
+  display: flex; flex-direction: column; gap: 4px;
+  margin: 6px 0 2px 28px;
+}
+.notify-type-toggle {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; color: var(--text-muted); cursor: pointer;
+}

@@ -23,6 +23,8 @@ export function ProfilePanel({
 }) {
   const accounts = useStore((s) => s.accounts);
   const chats = useStore((s) => s.chats);
+  const notifySettings = useStore((s) => s.notifySettings);
+  const toggleMute = useStore((s) => s.toggleMute);
   const refreshPeople = useStore((s) => s.refreshPeople);
   const refreshChats = useStore((s) => s.refreshChats);
   const [name, setName] = useState(person?.name ?? chat.name ?? chat.title ?? '');
@@ -34,6 +36,8 @@ export function ProfilePanel({
   const isDm = chat.type === 'dm';
   const account = accounts.find((a) => a.id === chat.accountId);
   const linkedChats = person ? memberChats : [chat];
+  const muteKey = person ? `person:${person.id}` : chat.id;
+  const muted = notifySettings.mutedChats.includes(muteKey);
 
   useEffect(() => {
     if (!isDm || !chat.remoteId.startsWith('+')) return;
@@ -128,6 +132,13 @@ export function ProfilePanel({
             )}
           </div>
         )}
+
+        <div className="profile-section">
+          <div className="profile-section-title">Notifications</div>
+          <button className="dialog-cancel" disabled={busy} onClick={() => void toggleMute(muteKey)}>
+            {muted ? '🔕 Muted — click to unmute' : '🔔 Enabled — click to mute'}
+          </button>
+        </div>
 
         <div className="profile-section">
           <div className="profile-section-title">Linked services</div>

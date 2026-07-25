@@ -1,5 +1,6 @@
 import { config } from '../config.js';
 import { getPushEndpoints } from '../store/db.js';
+import { shouldNotify } from './settings.js';
 
 export interface NotifyEvent {
   name: string; // display name of the chat
@@ -17,6 +18,7 @@ export interface NotifyEvent {
  * `ntfy subscribe | notify-send` works without parsing.
  */
 export async function notifyMessage(ev: NotifyEvent): Promise<void> {
+  if (!shouldNotify(ev.chatId)) return; // muted chat/person/provider rules
   const body = ev.preview.slice(0, 200);
   const headers: Record<string, string> = {
     Title: ev.name,

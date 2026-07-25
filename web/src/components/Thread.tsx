@@ -78,6 +78,10 @@ export function Thread() {
   const canReply = account?.capabilities.reply ?? false;
 
   const name = chat?.name ?? chat?.title ?? chat?.contactRaw ?? '';
+  const muted = useStore((s) => {
+    const key = person ? `person:${person.id}` : (chat?.id ?? '');
+    return key ? s.notifySettings.mutedChats.includes(key) : false;
+  });
 
   const scrollRef = useRef<HTMLDivElement>(null);
   // When set, restore the viewport anchor instead of jumping to the bottom
@@ -273,6 +277,11 @@ export function Thread() {
           <div className="thread-name" title={name || formatNumber(chat.remoteId)}>
             {chat.type === 'group' ? '👥 ' : chat.type === 'channel' ? '📢 ' : ''}
             {name || formatNumber(chat.remoteId)}
+            {muted && (
+              <span className="muted-bell" title="Notifications muted for this chat">
+                🔕
+              </span>
+            )}
             {chat.ephemeralSeconds ? (
               <span
                 className="ephemeral-icon"
