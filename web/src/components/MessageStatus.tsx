@@ -1,7 +1,5 @@
 import type { Message } from '../types';
 
-import type { Message } from '../types';
-
 const PROVIDER_NAME: Record<string, string> = {
   whatsapp: 'WhatsApp',
   signal: 'Signal',
