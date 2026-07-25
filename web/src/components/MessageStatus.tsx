@@ -63,22 +63,6 @@ export function MessageStatus({
   );
 }
 
-  const clickable = icon === 'failed' && onRetry && !msg.media?.length;
-  return (
-    <span
-      className={`msg-status ${icon}${clickable ? ' clickable' : ''}`}
-      data-tooltip={label}
-      title={label}
-      onClick={clickable ? () => onRetry(msg) : undefined}
-    >
-      {icon === 'sending' && <ClockSvg />}
-      {icon === 'sent' && <CheckSvg />}
-      {(icon === 'delivered' || icon === 'read') && <ChecksSvg blue={icon === 'read'} />}
-      {icon === 'failed' && <span className="msg-status-glyph">⚠</span>}
-    </span>
-  );
-}
-
 function ClockSvg() {
   return (
     <svg viewBox="0 0 16 16" width="14" height="14" className="msg-status-svg spin">
