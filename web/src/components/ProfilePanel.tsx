@@ -37,7 +37,10 @@ export function ProfilePanel({
   const account = accounts.find((a) => a.id === chat.accountId);
   const linkedChats = person ? memberChats : [chat];
   const muteKey = person ? `person:${person.id}` : chat.id;
-  const muted = notifySettings.mutedChats.includes(muteKey);
+  const defaultMuted = chat.type !== 'dm' && !chat.pinned;
+  const muted =
+    notifySettings.mutedChats.includes(muteKey) ||
+    (defaultMuted && !notifySettings.unmutedChats.includes(muteKey));
 
   useEffect(() => {
     if (!isDm || !chat.remoteId.startsWith('+')) return;
@@ -133,10 +136,29 @@ export function ProfilePanel({
           </div>
         )}
 
+        {chat.type === 'group' && (
+          <div className="profile-section">
+            <div className="profile-section-title">Placement</div>
+            <button
+              className="dialog-cancel"
+              disabled={busy}
+              onClick={() =>
+                void run(() => api.pinChat(chat.id, !chat.pinned))
+              }
+            >
+              {chat.pinned ? '📌 Pinned to main chats — click to move to Groups tab' : 'Move to main chats (pin)'}
+            </button>
+          </div>
+        )}
+
         <div className="profile-section">
           <div className="profile-section-title">Notifications</div>
           <button className="dialog-cancel" disabled={busy} onClick={() => void toggleMute(muteKey)}>
-            {muted ? '🔕 Muted — click to unmute' : '🔔 Enabled — click to mute'}
+            {muted
+              ? defaultMuted
+                ? '🔕 Muted (groups default) — click to unmute'
+                : '🔕 Muted — click to unmute'
+              : '🔔 Enabled — click to mute'}
           </button>
         </div>
 

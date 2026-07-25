@@ -75,6 +75,8 @@ export interface Chat {
   lastMessage?: Message;
   /** Disappearing messages duration in seconds (0 = off). */
   ephemeralSeconds?: number;
+  /** Group chat pinned into the main chat list (Groups tab otherwise). */
+  pinned?: number;
 }
 
 export interface Contact {

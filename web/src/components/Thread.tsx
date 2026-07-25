@@ -80,7 +80,13 @@ export function Thread() {
   const name = chat?.name ?? chat?.title ?? chat?.contactRaw ?? '';
   const muted = useStore((s) => {
     const key = person ? `person:${person.id}` : (chat?.id ?? '');
-    return key ? s.notifySettings.mutedChats.includes(key) : false;
+    if (!key) return false;
+    if (s.notifySettings.mutedChats.includes(key)) return true;
+    // Groups/channels are muted by default unless pinned or unmuted.
+    if (chat && chat.type !== 'dm' && !chat.pinned && !s.notifySettings.unmutedChats.includes(key)) {
+      return true;
+    }
+    return false;
   });
 
   const scrollRef = useRef<HTMLDivElement>(null);

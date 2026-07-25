@@ -54,6 +54,13 @@ export function notifyNewMessage(msg: Message, selectedChat: string | null) {
     if (type === 'group' && !rules.group) return;
     if (type === 'channel' && !rules.channel) return;
   }
+  // Groups/channels are muted by default unless pinned or explicitly unmuted.
+  if (chat && chat.type !== 'dm' && !chat.pinned) {
+    const unmuted =
+      s.notifySettings.unmutedChats.includes(msg.chatId) ||
+      (person && s.notifySettings.unmutedChats.includes(`person:${person.id}`));
+    if (!unmuted) return;
+  }
 
   // Privacy mode: sender + count, never the content.
   const stealth = localStorage.getItem('um-hide-previews') === '1';

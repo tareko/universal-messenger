@@ -146,6 +146,8 @@ export const api = {
   forward: (messageId: string, targetChatId: string) =>
     postJson<{ ok: boolean; id: string }>('/forward', { messageId, targetChatId }),
   markRead: (chatId: string) => postJson('/markread', { chatId }),
+  pinChat: (chatId: string, pinned: boolean) =>
+    postJson<{ ok: boolean }>('/chats/pin', { chatId, pinned }),
   typing: (chatId: string) => postJson('/typing', { chatId }),
   fetchMedia: (messageId: string) =>
     postJson<{ ok: boolean; pending: boolean }>('/media/fetch', { messageId }),

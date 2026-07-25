@@ -16,6 +16,7 @@ import {
   getContactName,
   getKv,
   setKv,
+  setChatPinned,
   getPeople,
   getChatPersonMap,
   createPerson,
@@ -346,7 +347,17 @@ api.put('/notify-settings', (req, res) => {
   saveNotifySettings({
     providers: body.providers ?? {},
     mutedChats: Array.isArray(body.mutedChats) ? body.mutedChats : [],
+    unmutedChats: Array.isArray(body.unmutedChats) ? body.unmutedChats : [],
   });
+  res.json({ ok: true });
+});
+
+/** Pin/unpin a group chat into the main chat list. */
+api.post('/chats/pin', (req, res) => {
+  const { chatId, pinned } = req.body as { chatId: string; pinned: boolean };
+  if (!chatId) return res.status(400).json({ error: 'chatId required' });
+  setChatPinned(chatId, Boolean(pinned));
+  broadcast({ type: 'chats-updated' });
   res.json({ ok: true });
 });
 

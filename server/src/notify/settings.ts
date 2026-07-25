@@ -11,6 +11,8 @@ export interface NotifySettings {
   providers: Record<string, ProviderNotifyRules>;
   /** Muted chats ('<chatId>') and muted people ('person:<id>'). */
   mutedChats: string[];
+  /** Explicitly UNmuted chats/people (overrides the default group mute). */
+  unmutedChats: string[];
 }
 
 const DEFAULT_RULES: ProviderNotifyRules = { enabled: true, dm: true, group: true, channel: true };
@@ -23,12 +25,13 @@ export function getNotifySettings(): NotifySettings {
       return {
         providers: parsed.providers ?? {},
         mutedChats: parsed.mutedChats ?? [],
+        unmutedChats: parsed.unmutedChats ?? [],
       };
     }
   } catch {
     /* fall through to defaults */
   }
-  return { providers: {}, mutedChats: [] };
+  return { providers: {}, mutedChats: [], unmutedChats: [] };
 }
 
 export function saveNotifySettings(s: NotifySettings): void {
@@ -53,5 +56,15 @@ export function shouldNotify(chatId: string, settings?: NotifySettings): boolean
   if (type === 'dm' && !rules.dm) return false;
   if (type === 'group' && !rules.group) return false;
   if (type === 'channel' && !rules.channel) return false;
+
+  // Groups/channels are muted BY DEFAULT unless pinned into the main list
+  // or explicitly unmuted (chat or person level).
+  if (type !== 'dm') {
+    const pinned = Boolean(chat?.pinned);
+    const unmuted =
+      s.unmutedChats.includes(chatId) ||
+      (personId !== undefined && s.unmutedChats.includes(`person:${personId}`));
+    if (!pinned && !unmuted) return false;
+  }
   return true;
 }

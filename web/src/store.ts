@@ -73,7 +73,7 @@ export const useStore = create<StoreState>((set, get) => ({
   selectedAccount: 'all',
   chats: [],
   people: [],
-  notifySettings: { providers: {}, mutedChats: [] },
+  notifySettings: { providers: {}, mutedChats: [], unmutedChats: [] },
   selectedChat: null,
   messages: [],
   replyTo: null,
@@ -187,14 +187,24 @@ export const useStore = create<StoreState>((set, get) => ({
     }
   },
 
-  /** Mute/unmute a chat ('<chatId>') or person ('person:<id>'). */
+  /**
+   * Toggle notifications for a chat ('<chatId>') or person ('person:<id>').
+   * Groups/channels are muted by default — toggling there UNMUTES
+   * (adds an unmute override); elsewhere it MUTES.
+   */
   toggleMute: async (key: string) => {
-    const { notifySettings } = get();
-    const muted = notifySettings.mutedChats.includes(key);
-    const mutedChats = muted
+    const { notifySettings, chats } = get();
+    const chat = chats.find((c) => c.id === key);
+    const defaultMuted = chat ? chat.type !== 'dm' && !chat.pinned : false;
+    const effectivelyMuted =
+      notifySettings.mutedChats.includes(key) || (defaultMuted && !notifySettings.unmutedChats.includes(key));
+    const mutedChats = effectivelyMuted
       ? notifySettings.mutedChats.filter((c) => c !== key)
-      : [...notifySettings.mutedChats, key];
-    await get().saveNotifySettings({ ...notifySettings, mutedChats });
+      : [...notifySettings.mutedChats.filter((c) => c !== key), key];
+    const unmutedChats = effectivelyMuted
+      ? [...notifySettings.unmutedChats.filter((c) => c !== key), key]
+      : notifySettings.unmutedChats.filter((c) => c !== key);
+    await get().saveNotifySettings({ ...notifySettings, mutedChats, unmutedChats });
   },
 
   refreshMessages: async () => {

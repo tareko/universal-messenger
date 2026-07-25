@@ -144,6 +144,12 @@ export function initDb() {
   } catch {
     /* column exists */
   }
+  // Group chats live in the Groups tab unless pinned into the main chat list.
+  try {
+    db.exec('ALTER TABLE chats ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    /* column exists */
+  }
   return db;
 }
 
@@ -339,7 +345,13 @@ function rowToChat(r: Record<string, unknown>): Chat {
     unread: r.unread !== undefined ? Number(r.unread) : 0,
     ts: r.ts !== undefined ? Number(r.ts) : 0,
     ephemeralSeconds: Number(r.ephemeral_seconds ?? 0),
+    pinned: Number(r.pinned ?? 0),
   };
+}
+
+/** Pin/unpin a group chat into the main chat list (also unmutes it by default). */
+export function setChatPinned(chatIdArg: string, pinned: boolean): void {
+  getDb().prepare('UPDATE chats SET pinned = ? WHERE id = ?').run(pinned ? 1 : 0, chatIdArg);
 }
 
 /** Record a chat's disappearing-messages duration (seconds; 0 = off). */

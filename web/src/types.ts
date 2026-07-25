@@ -76,6 +76,8 @@ export interface Chat {
   lastMessage?: Message;
   /** Disappearing messages duration in seconds (0/undefined = off). */
   ephemeralSeconds?: number;
+  /** Group pinned into the main chat list (1) vs Groups tab (0). */
+  pinned?: number;
   /** Set when this chat is linked into a person (identity group). */
   personId?: number | null;
 }
@@ -98,6 +100,7 @@ export interface ProviderNotifyRules {
 export interface NotifySettings {
   providers: Record<string, ProviderNotifyRules>;
   mutedChats: string[];
+  unmutedChats: string[];
 }
 
 export interface Contact {

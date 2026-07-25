@@ -27,9 +27,9 @@ export function ChatList() {
   const [msgHits, setMsgHits] = useState<SearchHit[]>([]);
   const [loadingMore, setLoadingMore] = useState(false);
   const [exhausted, setExhausted] = useState(false);
-  // Sidebar tab: regular chats vs WhatsApp channels (newsletters).
-  const [tab, setTab] = useState<'chats' | 'channels'>(
-    () => (localStorage.getItem('um-tab') as 'chats' | 'channels') || 'chats'
+  // Sidebar tabs: main chats (dms + pinned groups), groups, channels.
+  const [tab, setTab] = useState<'chats' | 'groups' | 'channels'>(
+    () => (localStorage.getItem('um-tab') as 'chats' | 'groups' | 'channels') || 'chats'
   );
 
   const hasVoipMs = accounts.some((a) => a.provider === 'voipms');
@@ -38,6 +38,7 @@ export function ChatList() {
   const showSmsBackfill =
     hasVoipMs && (selectedAccount === 'all' || selectedAccount.startsWith('voipms:'));
   const channelCount = chats.filter((c) => c.type === 'channel').length;
+  const groupCount = chats.filter((c) => c.type === 'group').length;
 
   useEffect(() => {
     const q = query.trim();
@@ -95,6 +96,7 @@ export function ChatList() {
       linked: boolean;
       group?: boolean;
       channel?: boolean;
+      pinned?: boolean;
     }
     const rows: Row[] = [];
     const seenPeople = new Set<number>();
@@ -134,13 +136,14 @@ export function ChatList() {
           linked: false,
           group: c.type === 'group',
           channel: c.type === 'channel',
+          pinned: Boolean(c.pinned),
         });
       }
     }
     return rows.sort((a, b) => b.ts - a.ts);
   }, [filteredChats, people, chats, typing, selectedAccount, chatSubtitle]);
 
-  function switchTab(t: 'chats' | 'channels') {
+  function switchTab(t: 'chats' | 'groups' | 'channels') {
     setTab(t);
     localStorage.setItem('um-tab', t);
   }
@@ -168,7 +171,7 @@ export function ChatList() {
 
   return (
     <div className="contact-list">
-      {channelCount > 0 && (
+      {(channelCount > 0 || groupCount > 0) && (
         <div className="chat-tabs">
           <button
             className={`chat-tab${tab === 'chats' ? ' active' : ''}`}
@@ -176,12 +179,22 @@ export function ChatList() {
           >
             Chats
           </button>
-          <button
-            className={`chat-tab${tab === 'channels' ? ' active' : ''}`}
-            onClick={() => switchTab('channels')}
-          >
-            📢 Channels ({channelCount})
-          </button>
+          {groupCount > 0 && (
+            <button
+              className={`chat-tab${tab === 'groups' ? ' active' : ''}`}
+              onClick={() => switchTab('groups')}
+            >
+              👥 Groups ({groupCount})
+            </button>
+          )}
+          {channelCount > 0 && (
+            <button
+              className={`chat-tab${tab === 'channels' ? ' active' : ''}`}
+              onClick={() => switchTab('channels')}
+            >
+              📢 Channels ({channelCount})
+            </button>
+          )}
         </div>
       )}
       <div className="search-bar">
@@ -215,6 +228,7 @@ export function ChatList() {
                   linked={r.linked}
                   group={r.group}
                   channel={r.channel}
+                  pinned={r.pinned}
                   onClick={() => void selectChat(r.selId)}
                 />
               ))}
@@ -264,6 +278,7 @@ export function ChatList() {
               linked={r.linked}
               group={r.group}
               channel={r.channel}
+              pinned={r.pinned}
               onClick={() => void selectChat(r.selId)}
             />
           ))
@@ -317,6 +332,7 @@ function ChatRow({
   linked,
   group,
   channel,
+  pinned,
   onClick,
 }: {
   name: string;
@@ -330,6 +346,7 @@ function ChatRow({
   linked?: boolean;
   group?: boolean;
   channel?: boolean;
+  pinned?: boolean;
   onClick: () => void;
 }) {
   const allBadges = badges ?? (badge ? [badge] : []);
@@ -341,6 +358,7 @@ function ChatRow({
           <span className="contact-name">
             {group ? '👥 ' : channel ? '📢 ' : ''}
             {linked ? '🔗 ' : ''}
+            {pinned && group ? '📌 ' : ''}
             {name}
             {allBadges.map((b, i) => (
               <span key={i} className="provider-badge">{b}</span>
