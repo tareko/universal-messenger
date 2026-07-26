@@ -44,6 +44,7 @@ export function Thread() {
   const hasOlder = useStore((s) => s.hasOlder);
   const loadingOlder = useStore((s) => s.loadingOlder);
   const loadOlderMessages = useStore((s) => s.loadOlderMessages);
+  const selectChat = useStore((s) => s.selectChat);
   const retryText = useStore((s) => s.retryText);
   const reactMessage = useStore((s) => s.reactMessage);
   const replyPrivately = useStore((s) => s.replyPrivately);
@@ -157,6 +158,51 @@ export function Thread() {
       return;
     }
     if (pendingInitialScroll.current && messages.length > 0) {
+      // A cross-chat quote jump is pending: land on the target message.
+      const jump = useStore.getState().pendingJump;
+      if (jump) {
+        const flash = (target: HTMLElement) => {
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          target.classList.add('flash');
+          setTimeout(() => target.classList.remove('flash'), 1200);
+        };
+        const land = () => {
+          pendingInitialScroll.current = false;
+          useStore.getState().setPendingJump(null);
+          canClearUnreadRef.current = true;
+          stickRef.current = false;
+          setPositioned(true);
+        };
+        const el2 = document.getElementById(`msg-${jump}`);
+        if (el2) {
+          land();
+          flash(el2);
+          return;
+        }
+        // Not in the first page — page back looking for it, then land there.
+        void (async () => {
+          for (let i = 0; i < 5; i++) {
+            if (!useStore.getState().hasOlder) break;
+            anchorRef.current = el.scrollHeight - el.scrollTop;
+            await loadOlderMessages();
+            await new Promise((r) => setTimeout(r, 250));
+            const retry = document.getElementById(`msg-${jump}`);
+            if (retry) {
+              land();
+              flash(retry);
+              return;
+            }
+          }
+          // Give up: land at the bottom, gate open.
+          pendingInitialScroll.current = false;
+          useStore.getState().setPendingJump(null);
+          canClearUnreadRef.current = true;
+          stickRef.current = true;
+          el.scrollTop = el.scrollHeight;
+          setPositioned(true);
+        })();
+        return;
+      }
       // Position on the unread divider (or the bottom). This may run several
       // times (partial commits during load) — it's only CONSUMED once the
       // full first fetch has landed, so late arrivals can't steal it.
@@ -235,15 +281,21 @@ export function Thread() {
     if (useStore.getState().unreadAtOpen > 0) useStore.setState({ unreadAtOpen: 0 });
   }
 
-  /** Jump to a quoted message, paging back through history if needed. */
-  async function jumpToMessage(quotedId: string) {
+  /** Jump to a quoted message — same chat: scroll/flash; other chat: open it there. */
+  async function jumpToMessage(quotedId: string, quotedChatId?: string) {
     const flash = (el: HTMLElement) => {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       el.classList.add('flash');
       setTimeout(() => el.classList.remove('flash'), 1200);
     };
     const found = document.getElementById(`msg-${quotedId}`);
-    if (found) return flash(found);
+    if (found && (!quotedChatId || quotedChatId === selectedChat)) return flash(found);
+    // Cross-chat quote (e.g. reply-privately): open the quoted chat at it.
+    if (quotedChatId && quotedChatId !== selectedChat) {
+      useStore.getState().setPendingJump(quotedId);
+      await selectChat(quotedChatId);
+      return;
+    }
     const container = scrollRef.current;
     for (let i = 0; i < 5; i++) {
       if (!useStore.getState().hasOlder) return;
@@ -355,7 +407,7 @@ export function Thread() {
                 onReplyPrivately={() => void replyPrivately(m)}
                 onForward={() => setForwarding(m)}
                 onRetry={(msg) => void retryText(msg.id, msg.body)}
-                onQuoteClick={() => void jumpToMessage(m.quotedId!)}
+                onQuoteClick={() => void jumpToMessage(m.quotedId!, m.quoted?.chatId)}
               />
             </Fragment>
           );

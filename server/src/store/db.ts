@@ -725,6 +725,7 @@ function hydrateExtras(messages: Message[], chatIdArg: string): Message[] {
           ...out,
           quoted: {
             id: q.id,
+            chatId: q.chatId,
             body: q.body,
             sender: q.sender,
             outgoing: q.outgoing,

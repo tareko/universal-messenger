@@ -53,6 +53,7 @@ export interface Message {
   reactions?: ReactionRef[];
   quoted?: {
     id: string;
+    chatId: string; // quoted message's chat (may differ from this message's)
     body: string;
     sender: string | null;
     outgoing: 0 | 1;

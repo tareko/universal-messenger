@@ -22,6 +22,8 @@ interface StoreState {
   hasOlder: boolean; // more history available (DB or provider-side)
   loadingOlder: boolean;
   unreadAtOpen: number; // unread count captured when the chat was opened
+  /** Message id to scroll to once the target chat loads (cross-chat quote jump). */
+  pendingJump: string | null;
   /** True once the first message fetch for the open chat has completed. */
   messagesLoaded: boolean;
   /** chatId → who is typing there (auto-expires). */
@@ -65,6 +67,7 @@ interface StoreState {
   onMessageUpdated: (msg: Message) => void;
   onMessageDeleted: (id: string) => void;
   onTyping: (data: { chatId: string; name: string | null; expiresAt: number }) => void;
+  setPendingJump: (id: string | null) => void;
 }
 
 export const useStore = create<StoreState>((set, get) => ({
@@ -81,6 +84,7 @@ export const useStore = create<StoreState>((set, get) => ({
   hasOlder: true,
   loadingOlder: false,
   unreadAtOpen: 0,
+  pendingJump: null,
   messagesLoaded: false,
   typing: {},
   scrollNonce: 0,
@@ -301,7 +305,13 @@ export const useStore = create<StoreState>((set, get) => ({
     const targetChatId = resolveTargetChat(get(), forceChatId);
     const chat = chats.find((c) => c.id === targetChatId);
     const quoted = replyTo
-      ? { id: replyTo.id, body: replyTo.body, sender: replyTo.sender, outgoing: replyTo.outgoing }
+      ? {
+          id: replyTo.id,
+          chatId: replyTo.chatId,
+          body: replyTo.body,
+          sender: replyTo.sender,
+          outgoing: replyTo.outgoing,
+        }
       : null;
     set({ replyTo: null });
     const now = Date.now();
@@ -462,6 +472,7 @@ export const useStore = create<StoreState>((set, get) => ({
   setStatus: (s) => set({ status: s }),
   patchStatus: (p) => set((s) => (s.status ? { ...s, status: { ...s.status, ...p } } : s)),
   setAccounts: (a) => set({ accounts: a }),
+  setPendingJump: (id) => set({ pendingJump: id }),
 
   onMessage: async (msg) => {
     const { selectedChat, messages } = get();
