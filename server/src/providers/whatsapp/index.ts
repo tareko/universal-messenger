@@ -814,6 +814,22 @@ export class WhatsAppProvider implements Provider {
     }
   }
 
+  /** Group members for @mention autocomplete. */
+  async fetchParticipants(chat: Chat): Promise<{ id: string; name: string }[] | null> {
+    if (!this.sock || this.state !== 'open' || chat.type !== 'group') return null;
+    try {
+      const md = await this.sock.groupMetadata(chat.remoteId);
+      const out: { id: string; name: string }[] = [];
+      for (const p of md.participants) {
+        const phone = await this.phoneFromJid(p.id);
+        out.push({ id: phone, name: getName(phone) ?? phone });
+      }
+      return out;
+    } catch {
+      return null;
+    }
+  }
+
   /** Subscribe to presence for a chat (required to receive typing updates). */
   async subscribePresence(chat: Chat): Promise<void> {
     if (!this.sock || this.state !== 'open') return;
@@ -868,13 +884,27 @@ export class WhatsAppProvider implements Provider {
       : undefined;
 
     const m = payload.media?.[0];
+    let text = payload.body;
+    const mentionedJids: string[] = [];
+    // WhatsApp renders mention text as @<number>; swap our @Name back to it.
+    for (const mention of payload.mentions ?? []) {
+      const digits = mention.memberId.replace(/\D/g, '');
+      if (!digits) continue;
+      const idx = text.indexOf(`@${mention.name}`);
+      if (idx >= 0) {
+        text = `${text.slice(0, idx)}@${digits}${text.slice(idx + mention.name.length + 1)}`;
+      }
+      const jid = `${digits}@s.whatsapp.net`;
+      if (!mentionedJids.includes(jid)) mentionedJids.push(jid);
+    }
     const content: AnyMessageContent = m
       ? {
           image: Buffer.from(m.data, 'base64'),
-          caption: payload.body || undefined,
+          caption: text || undefined,
           mimetype: m.contentType,
+          mentions: mentionedJids.length ? mentionedJids : undefined,
         }
-      : { text: payload.body };
+      : { text, mentions: mentionedJids.length ? mentionedJids : undefined };
 
     // Respect the chat's disappearing-messages setting, if enabled.
     const sendOpts: Parameters<WASocket['sendMessage']>[2] = { quoted };

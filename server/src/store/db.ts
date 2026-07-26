@@ -96,6 +96,13 @@ export function initDb() {
       chat_id   TEXT PRIMARY KEY,
       person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS chat_participants (
+      chat_id   TEXT NOT NULL,
+      member_id TEXT NOT NULL,
+      name      TEXT,
+      PRIMARY KEY (chat_id, member_id)
+    );
   `);
 
   // Full-text search index over message bodies (external-content FTS5).
@@ -816,6 +823,36 @@ function reactionsForChat(chatIdArg: string): Map<string, ReactionRef[]> {
     map.set(r.message_id, list);
   }
   return map;
+}
+
+// ---------- chat participants (group members, for @mentions) ----------
+export interface Participant {
+  id: string;
+  name: string;
+}
+
+export function replaceChatParticipants(chatIdArg: string, members: Participant[]): void {
+  const tx = getDb().transaction((items: Participant[]) => {
+    getDb().prepare('DELETE FROM chat_participants WHERE chat_id = ?').run(chatIdArg);
+    const stmt = getDb().prepare(
+      'INSERT INTO chat_participants(chat_id, member_id, name) VALUES(?, ?, ?)'
+    );
+    for (const m of items) stmt.run(chatIdArg, m.id, m.name);
+  });
+  tx(members);
+  setKv(`participants_ts:${chatIdArg}`, String(Date.now()));
+}
+
+export function getChatParticipants(chatIdArg: string): Participant[] {
+  const rows = getDb()
+    .prepare('SELECT member_id AS id, name FROM chat_participants WHERE chat_id = ?')
+    .all(chatIdArg) as { id: string; name: string }[];
+  return rows;
+}
+
+export function getParticipantsAge(chatIdArg: string): number {
+  const ts = Number(getKv(`participants_ts:${chatIdArg}`) ?? '0');
+  return ts ? Date.now() - ts : Infinity;
 }
 
 // ---------- people (cross-provider identity linking) ----------

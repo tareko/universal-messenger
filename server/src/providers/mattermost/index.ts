@@ -593,6 +593,25 @@ export class MattermostProvider implements Provider {
   }
 
   /** Tell the channel we're typing (Mattermost relays this over its WS). */
+  /** Channel members for @mention autocomplete. */
+  async fetchParticipants(chat: Chat): Promise<{ id: string; name: string }[] | null> {
+    if (chat.type !== 'group' || this.state !== 'open') return null;
+    try {
+      const members = await this.rest<{ user_id: string }[]>(
+        'GET',
+        `/channels/${chat.remoteId}/members`
+      );
+      const out: { id: string; name: string }[] = [];
+      for (const m of members) {
+        const name = await this.usernameFor(m.user_id);
+        out.push({ id: name, name });
+      }
+      return out;
+    } catch {
+      return null;
+    }
+  }
+
   /** Find-or-create a DM channel with a user (by username) for reply-privately. */
   async createDmChannel(username: string): Promise<string> {
     if (!this.me) throw new Error('mattermost not connected');
@@ -667,10 +686,18 @@ export class MattermostProvider implements Provider {
 
     let post: MmPost;
     let usedRootId: string | undefined = rootId;
+    // Mattermost mentions are plain @username — swap picked @Name mentions
+    // when the display name differs from the username.
+    let mmBody = payload.body;
+    for (const mention of payload.mentions ?? []) {
+      if (mention.name !== mention.memberId) {
+        mmBody = mmBody.split(`@${mention.name}`).join(`@${mention.memberId}`);
+      }
+    }
     try {
       post = await this.rest<MmPost>('POST', '/posts', {
         channel_id: chat.remoteId,
-        message: payload.body,
+        message: mmBody,
         root_id: rootId,
         file_ids: fileIds,
       });

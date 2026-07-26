@@ -2,6 +2,7 @@ import { getKv, setKv } from '../../store/db.js';
 import {
   addReaction,
   getMessage,
+  getName,
   getReactionsForMessage,
   isRecentOutgoing,
   markMessageDeleted,
@@ -356,6 +357,23 @@ export class SignalProvider implements Provider {
 
   // ---------- outbound ----------
 
+  /** Group members for @mention autocomplete. */
+  async fetchParticipants(chat: Chat): Promise<{ id: string; name: string }[] | null> {
+    if (!this.number || this.state !== 'open' || chat.type !== 'group') return null;
+    try {
+      const res = await fetch(`${this.base}/v1/groups/${encodeURIComponent(this.number)}`, {
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) return null;
+      const groups = (await res.json()) as { id?: string; members?: string[] }[];
+      const groupId = chat.remoteId.replace(/^group\./, '');
+      const g = groups.find((x) => x.id === groupId);
+      return (g?.members ?? []).map((m) => ({ id: m, name: getName(m) ?? m }));
+    } catch {
+      return null;
+    }
+  }
+
   /** signal-cli recipients format for a chat remoteId. */
   private static recipientsFor(chat: Chat): string[] {
     return [chat.remoteId]; // dm: '+1555...', group: 'group.<base64>'
@@ -400,6 +418,16 @@ export class SignalProvider implements Provider {
 
     const m = payload.media?.[0];
     if (m) body.base64_attachments = [`data:${m.contentType};base64,${m.data}`];
+
+    // Signal mentions: {author, start, length} ranges into the message text.
+    const mentions: { author: string; start: number; length: number }[] = [];
+    for (const mention of payload.mentions ?? []) {
+      const start = payload.body.indexOf(`@${mention.name}`);
+      if (start >= 0) {
+        mentions.push({ author: mention.memberId, start, length: mention.name.length + 1 });
+      }
+    }
+    if (mentions.length) body.mentions = mentions;
 
     await this.postSend(body);
 

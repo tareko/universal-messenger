@@ -19,6 +19,9 @@ import {
   setChatPinned,
   setChatHidden,
   setChatsHidden,
+  getChatParticipants,
+  replaceChatParticipants,
+  getParticipantsAge,
   getPeople,
   getChatPersonMap,
   createPerson,
@@ -553,12 +556,33 @@ function withQuoteFallback(
   return { body: `${header}${quotedLines}\n\n${message}` };
 }
 
+/** Group participants for @mention autocomplete (cached, hourly refresh). */
+api.get('/participants', async (req, res) => {
+  const chatId = String(req.query.chat || '');
+  if (!chatId) return res.status(400).json({ error: 'chat required' });
+  const chat = getChat(chatId);
+  if (!chat) return res.status(404).json({ error: 'chat not found' });
+  if (getChatParticipants(chatId).length === 0 || getParticipantsAge(chatId) > 3600_000) {
+    const provider = providerForAccount(chat.accountId);
+    if (provider?.fetchParticipants) {
+      try {
+        const members = await provider.fetchParticipants(chat);
+        if (members && members.length) replaceChatParticipants(chatId, members);
+      } catch {
+        /* serve whatever we have */
+      }
+    }
+  }
+  res.json(getChatParticipants(chatId));
+});
+
 api.post('/send', async (req, res) => {
   try {
-    const { chatId, message, quotedId } = req.body as {
+    const { chatId, message, quotedId, mentions } = req.body as {
       chatId: string;
       message: string;
       quotedId?: string;
+      mentions?: { name: string; memberId: string }[];
     };
     if (!chatId || !message) return res.status(400).json({ error: 'chatId, message required' });
     const chat = getChat(chatId);
@@ -569,7 +593,7 @@ api.post('/send', async (req, res) => {
     // Quoting is only native within the same account. Cross-provider quotes
     // (and providers without replies, e.g. SMS) fall back to "> quoted text".
     const q = withQuoteFallback(message, quotedId, chatId, chat.accountId, provider.capabilities);
-    const result = await provider.send(chat, { body: q.body, quotedId: q.quotedId });
+    const result = await provider.send(chat, { body: q.body, quotedId: q.quotedId, mentions });
     res.json({ ok: true, id: result.id ? `${chat.accountId}:${result.id}` : '' });
   } catch (err) {
     console.error('[api] send failed:', (err as Error).message);

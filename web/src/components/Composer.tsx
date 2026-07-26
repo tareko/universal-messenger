@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore, isPersonSelection } from '../store';
 import { api } from '../api';
 import { EmojiPicker } from './EmojiPicker';
@@ -20,6 +20,20 @@ interface Attachment {
 interface EmojiToken {
   start: number;
   query: string;
+}
+
+interface MentionCandidate {
+  name: string;
+  memberId: string;
+  source: 'participant' | 'contact';
+}
+
+/** Find an `@partial` mention token immediately before the caret. */
+function mentionTokenAt(text: string, caret: number): EmojiToken | null {
+  const before = text.slice(0, caret);
+  const m = before.match(/(^|\s)@([a-z0-9_+\-. ]{1,30})$/i);
+  if (!m || m.index === undefined) return null;
+  return { start: m.index + m[1].length, query: m[2].toLowerCase() };
 }
 
 function loadImage(file: File): Promise<HTMLImageElement> {
@@ -83,6 +97,12 @@ export function Composer() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [token, setToken] = useState<EmojiToken | null>(null);
   const [selIdx, setSelIdx] = useState(0);
+  // @mention autocomplete state
+  const [mentionToken, setMentionToken] = useState<EmojiToken | null>(null);
+  const [mentionIdx, setMentionIdx] = useState(0);
+  const [participants, setParticipants] = useState<{ id: string; name: string }[]>([]);
+  const [contactMatches, setContactMatches] = useState<MentionCandidate[]>([]);
+  const [mentions, setMentions] = useState<{ name: string; memberId: string }[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
@@ -97,7 +117,52 @@ export function Composer() {
   const memberChats = person ? chats.filter((c) => person.chatIds.includes(c.id)) : [];
   const [targetOverride, setTargetOverride] = useState<string | null>(null);
   const [targetMenuOpen, setTargetMenuOpen] = useState(false);
-  useEffect(() => setTargetOverride(null), [selectedChat]);
+  useEffect(() => {
+    setTargetOverride(null);
+    setMentions([]);
+    setParticipants([]);
+    // Load group participants for @mention autocomplete.
+    if (chat?.type === 'group') {
+      void api.participants(chat.id).then(setParticipants).catch(() => setParticipants([]));
+    }
+  }, [selectedChat, chat?.id, chat?.type]);
+
+  const mentionCandidates = useMemo<MentionCandidate[]>(() => {
+    if (!mentionToken) return [];
+    const q = mentionToken.query;
+    const fromChat = participants
+      .filter((p) => p.name.toLowerCase().includes(q))
+      .slice(0, 5)
+      .map((p) => ({ name: p.name, memberId: p.id, source: 'participant' as const }));
+    return [...fromChat, ...contactMatches].slice(0, 7);
+  }, [mentionToken, participants, contactMatches]);
+  const showMentionSuggest = mentionCandidates.length > 0;
+
+  // Second-tier suggestions: DAV contacts when the @ query has few local hits.
+  useEffect(() => {
+    const q = mentionToken?.query ?? '';
+    if (!mentionToken || q.length < 2 || participants.filter((p) => p.name.toLowerCase().includes(q)).length >= 5) {
+      setContactMatches([]);
+      return;
+    }
+    let active = true;
+    const t = setTimeout(async () => {
+      try {
+        const r = await api.contacts(q);
+        if (active) {
+          setContactMatches(
+            r.slice(0, 5).map((c) => ({ name: c.name, memberId: c.tel, source: 'contact' as const }))
+          );
+        }
+      } catch {
+        /* ignore */
+      }
+    }, 250);
+    return () => {
+      active = false;
+      clearTimeout(t);
+    };
+  }, [mentionToken, participants]);
 
   const suggestions = token ? searchEmojis(token.query, 8) : [];
   const showSuggest = suggestions.length > 0;
@@ -136,6 +201,20 @@ export function Composer() {
     // arrow-key navigation isn't wiped out.
     if (newToken?.query !== token?.query) setSelIdx(0);
     setToken(newToken);
+    // @mention autocomplete (group chats only)
+    const mToken = chat?.type === 'group' ? mentionTokenAt(value, caret) : null;
+    if (mToken?.query !== mentionToken?.query) setMentionIdx(0);
+    setMentionToken(mToken);
+  }
+
+  function acceptMention(idx: number) {
+    const c = mentionCandidates[idx];
+    if (!c || !mentionToken) return;
+    const ta = taRef.current;
+    const caret = ta?.selectionStart ?? text.length;
+    replaceRange(mentionToken.start, caret, `@${c.name} `);
+    setMentions((prev) => [...prev.filter((m) => m.memberId !== c.memberId), { name: c.name, memberId: c.memberId }]);
+    setMentionToken(null);
   }
 
   function replaceRange(start: number, end: number, insert: string) {
@@ -203,7 +282,9 @@ export function Composer() {
     if (!canSend) return;
     const body = trimmed;
     const forced = targetOverride ?? undefined;
+    const picked = mentions.filter((m) => body.includes(`@${m.name}`));
     setTargetOverride(null); // override is per-message
+    setMentions([]);
     if (attachment) {
       const att = attachment;
       setAttachment(null);
@@ -213,11 +294,33 @@ export function Composer() {
     } else {
       setText('');
       setPrepError(null);
-      await sendMessage(body, forced);
+      await sendMessage(body, forced, picked);
     }
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (showMentionSuggest) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMentionIdx((i) => (i + 1) % mentionCandidates.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMentionIdx((i) => (i - 1 + mentionCandidates.length) % mentionCandidates.length);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        acceptMention(mentionIdx);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setMentionToken(null);
+        return;
+      }
+    }
     if (showSuggest) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -293,6 +396,25 @@ export function Composer() {
       </div>
 
       <div className="composer-input-col">
+        {showMentionSuggest && (
+          <div className="emoji-suggest">
+            {mentionCandidates.map((c, i) => (
+              <button
+                key={c.memberId}
+                className={`emoji-suggest-row${i === mentionIdx ? ' active' : ''}`}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  acceptMention(i);
+                }}
+                onMouseEnter={() => setMentionIdx(i)}
+              >
+                <span className="emoji-suggest-char">@</span>
+                <span className="emoji-suggest-code">{c.name}</span>
+                {c.source === 'contact' && <span className="mention-source">contact</span>}
+              </button>
+            ))}
+          </div>
+        )}
         {replyTo && (
           <div className="reply-preview">
             <div className="reply-preview-bar" />

@@ -44,7 +44,7 @@ interface StoreState {
   refreshMessages: () => Promise<void>;
   loadOlderMessages: () => Promise<void>;
   backfillHistory: () => Promise<{ newMessages: number; reachedLimit: boolean }>;
-  sendMessage: (text: string, forceChatId?: string) => Promise<void>;
+  sendMessage: (text: string, forceChatId?: string, mentions?: { name: string; memberId: string }[]) => Promise<void>;
   sendMedia: (
     file: Blob,
     contentType: string,
@@ -291,7 +291,7 @@ export const useStore = create<StoreState>((set, get) => ({
     }
   },
 
-  sendMessage: async (text: string, forceChatId?: string) => {
+  sendMessage: async (text: string, forceChatId?: string, mentions?: { name: string; memberId: string }[]) => {
     const { selectedChat, messages, chats, replyTo } = get();
     const body = text.trim();
     if (!selectedChat || !body) return;
@@ -323,7 +323,7 @@ export const useStore = create<StoreState>((set, get) => ({
     set({ messages: [...messages, opt], scrollNonce: get().scrollNonce + 1 });
     bumpChat(targetChatId, opt, set);
     try {
-      const res = await api.send(targetChatId, body, quoted?.id);
+      const res = await api.send(targetChatId, body, quoted?.id, mentions);
       patchMessage(set, optId, { id: res.id || optId, status: 'sent' });
     } catch (e) {
       patchMessage(set, optId, { status: 'failed', error: (e as Error).message });

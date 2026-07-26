@@ -61,49 +61,107 @@ function splitQuoteLines(text: string): Block[] {
   return out;
 }
 
-function inline(text: string, provider: string, keyBase: number): ReactNode[] {
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function inline(
+  text: string,
+  provider: string,
+  keyBase: number,
+  mentions?: { name: string; memberId: string }[],
+  onMentionClick?: (memberId: string) => void
+): ReactNode[] {
   const italicSingle = provider === 'mattermost'; // *x* = italic there, bold elsewhere
+  // Build a mention alternation from known participant names (longest first).
+  const names = (mentions ?? []).map((m) => m.name).filter(Boolean).sort((a, b) => b.length - a.length);
+  const mentionRe = names.length
+    ? new RegExp(`@(${names.map(escapeRe).join('|')})`, 'g')
+    : null;
   const re = /(`[^`]+`)|(\*\*[^*\n]+\*\*)|(\*[^*\n]+\*)|(_[^_\n]+_)|(~~[^~\n]+~~)|(~[^~\n]+~)|(https?:\/\/[^\s<>"')\]]+)/g;
   const out: ReactNode[] = [];
-  let last = 0;
-  let k = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text))) {
-    if (m.index > last) out.push(text.slice(last, m.index));
-    const [full, code, bold2, single, italic, strike2, strike, link] = m;
-    const key = `${keyBase}-${k++}`;
-    if (code) {
+
+  function pushStyled(segment: string, k0: number) {
+    let last = 0;
+    let k = k0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(segment))) {
+      if (m.index > last) out.push(segment.slice(last, m.index));
+      const [full, code, bold2, single, italic, strike2, strike, link] = m;
+      const key = `${keyBase}-${k++}`;
+      if (code) {
+        out.push(
+          <code key={key} className="md-code">
+            {code.slice(1, -1)}
+          </code>
+        );
+      } else if (bold2) {
+        out.push(<strong key={key}>{bold2.slice(2, -2)}</strong>);
+      } else if (single) {
+        const inner = single.slice(1, -1);
+        out.push(italicSingle ? <em key={key}>{inner}</em> : <strong key={key}>{inner}</strong>);
+      } else if (italic) {
+        out.push(<em key={key}>{italic.slice(1, -1)}</em>);
+      } else if (strike2) {
+        out.push(<s key={key}>{strike2.slice(2, -2)}</s>);
+      } else if (strike) {
+        out.push(<s key={key}>{strike.slice(1, -1)}</s>);
+      } else if (link) {
+        out.push(
+          <a key={key} href={link} target="_blank" rel="noreferrer" className="md-link">
+            {link}
+          </a>
+        );
+      }
+      last = m.index + full.length;
+    }
+    if (last < segment.length) out.push(segment.slice(last));
+    return k;
+  }
+
+  // Mentions first (they win over other inline formatting).
+  if (mentionRe) {
+    let last = 0;
+    let k = 0;
+    let m: RegExpExecArray | null;
+    while ((m = mentionRe.exec(text))) {
+      if (m.index > last) k = pushStyled(text.slice(last, m.index), k);
+      const name = m[1];
+      const mention = mentions!.find((x) => x.name === name)!;
       out.push(
-        <code key={key} className="md-code">
-          {code.slice(1, -1)}
-        </code>
-      );
-    } else if (bold2) {
-      out.push(<strong key={key}>{bold2.slice(2, -2)}</strong>);
-    } else if (single) {
-      // *x* — provider-dependent meaning
-      const inner = single.slice(1, -1);
-      out.push(italicSingle ? <em key={key}>{inner}</em> : <strong key={key}>{inner}</strong>);
-    } else if (italic) {
-      out.push(<em key={key}>{italic.slice(1, -1)}</em>);
-    } else if (strike2) {
-      out.push(<s key={key}>{strike2.slice(2, -2)}</s>);
-    } else if (strike) {
-      out.push(<s key={key}>{strike.slice(1, -1)}</s>);
-    } else if (link) {
-      out.push(
-        <a key={key} href={link} target="_blank" rel="noreferrer" className="md-link">
-          {link}
+        <a
+          key={`${keyBase}-m${k++}`}
+          className="md-mention"
+          role="button"
+          onClick={(e) => {
+            e.preventDefault();
+            onMentionClick?.(mention.memberId);
+          }}
+        >
+          @{name}
         </a>
       );
+      last = m.index + m[0].length;
     }
-    last = m.index + full.length;
+    if (last < text.length) pushStyled(text.slice(last), k);
+    return out;
   }
-  if (last < text.length) out.push(text.slice(last));
+
+  pushStyled(text, 0);
   return out;
 }
 
-export function Formatted({ text, provider }: { text: string; provider: string }) {
+export function Formatted({
+  text,
+  provider,
+  mentions,
+  onMentionClick,
+}: {
+  text: string;
+  provider: string;
+  mentions?: { name: string; memberId: string }[];
+  onMentionClick?: (memberId: string) => void;
+}) {
   // Split "> " quote lines first, then code blocks + inline per segment.
   const segments = splitQuoteLines(text).flatMap((seg) =>
     seg.quote !== undefined ? [seg] : splitCodeBlocks(seg.text ?? '')
@@ -117,14 +175,14 @@ export function Formatted({ text, provider }: { text: string; provider: string }
       {segments.map((b, i) =>
         b.quote !== undefined ? (
           <div key={i} className={quoteOnly ? 'md-quote-full' : 'md-quote'} dir="auto">
-            {inline(b.quote, provider, i)}
+            {inline(b.quote, provider, i, mentions, onMentionClick)}
           </div>
         ) : b.code !== undefined ? (
           <pre key={i} className="md-pre">
             <code>{b.code}</code>
           </pre>
         ) : (
-          <span key={i}>{inline(b.text ?? '', provider, i)}</span>
+          <span key={i}>{inline(b.text ?? '', provider, i, mentions, onMentionClick)}</span>
         )
       )}
     </>

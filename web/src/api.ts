@@ -131,8 +131,8 @@ export const api = {
     ),
   fetchOlder: (chatId: string) =>
     postJson<{ ok: boolean; fetched: number }>('/fetch-older', { chatId }),
-  send: (chatId: string, message: string, quotedId?: string) =>
-    postJson<{ ok: boolean; id: string }>('/send', { chatId, message, quotedId }),
+  send: (chatId: string, message: string, quotedId?: string, mentions?: { name: string; memberId: string }[]) =>
+    postJson<{ ok: boolean; id: string }>('/send', { chatId, message, quotedId, mentions }),
   sendMedia: (chatId: string, message: string, file: Blob, contentType: string) => {
     const fd = new FormData();
     fd.append('chatId', chatId);
@@ -179,6 +179,8 @@ export const api = {
       return (await r.json()) as { ok: boolean };
     }),
   contacts: (q: string) => getJson<Contact[]>(`/contacts?q=${encodeURIComponent(q)}`),
+  participants: (chatId: string) =>
+    getJson<{ id: string; name: string }[]>(`/participants?chat=${encodeURIComponent(chatId)}`),
   search: (q: string) =>
     getJson<{ message: Message; chatId: string; chatName: string | null }[]>(
       `/search?q=${encodeURIComponent(q)}`

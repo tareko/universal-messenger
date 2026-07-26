@@ -36,6 +36,8 @@ export interface SendPayload {
   media?: OutgoingMedia[];
   quotedId?: string; // internal (namespaced) id of the message being replied to
   forwardedFrom?: string; // marked on the stored copy when forwarding
+  /** @mentions to attach (picked via the composer autocomplete). */
+  mentions?: { name: string; memberId: string }[];
 }
 
 export interface SendResult {
@@ -91,6 +93,8 @@ export interface Provider {
    * presence for subscribed chats. Called when the user opens a chat.
    */
   subscribePresence?(chat: Chat): Promise<void>;
+  /** Group member list for @mention autocomplete (null = not a group/unsupported). */
+  fetchParticipants?(chat: Chat): Promise<{ id: string; name: string }[] | null>;
   /**
    * Inspect an inbound text body; return non-null if it's actually a reaction
    * (e.g. iMessage tapback fallback over SMS) rather than a normal message.

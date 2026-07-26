@@ -375,6 +375,24 @@ export function Thread() {
   );
 }
 
+/** Cached group participants per chat (for @mention rendering). */
+const participantsCache = new Map<string, { id: string; name: string }[]>();
+
+function useParticipants(chatId: string, isGroup: boolean): { id: string; name: string }[] {
+  const [list, setList] = useState(participantsCache.get(chatId) ?? []);
+  useEffect(() => {
+    if (!isGroup || participantsCache.has(chatId)) return;
+    void api
+      .participants(chatId)
+      .then((r) => {
+        participantsCache.set(chatId, r);
+        setList(r);
+      })
+      .catch(() => {});
+  }, [chatId, isGroup]);
+  return list;
+}
+
 function Bubble({
   msg,
   isGroup,
@@ -409,8 +427,23 @@ function Bubble({
   const rowRef = useRef<HTMLDivElement>(null);
   // Highlight this row while it's the message being quoted in the composer.
   const isReplyTarget = useStore((s) => s.replyTo?.id === msg.id);
+  const selectChat = useStore((s) => s.selectChat);
+  const refreshChats = useStore((s) => s.refreshChats);
+  const participants = useParticipants(msg.chatId, isGroup);
+  const mentionList = useMemo(
+    () => participants.map((p) => ({ name: p.name, memberId: p.id })),
+    [participants]
+  );
   const emojiSet = REACTION_SETS[provider] ?? DEFAULT_SET;
   const allowMore = MORE_ALLOWED.has(provider);
+
+  /** Open a DM with a mentioned person (same service). */
+  function onMentionClick(memberId: string) {
+    void api.dmChat(msg.chatId, memberId).then(async (r) => {
+      await refreshChats();
+      await selectChat(r.chatId);
+    });
+  }
 
   // Lazy attachment: fetch only once the bubble is actually near the viewport
   // (opening a 300-message backlog must not fire 50 WhatsApp downloads at
@@ -613,7 +646,12 @@ function Bubble({
           ))}
           {caption && (
             <span className="bubble-text" dir="auto">
-              <Formatted text={caption} provider={msg.accountId.split(':')[0]} />
+              <Formatted
+                text={caption}
+                provider={msg.accountId.split(':')[0]}
+                mentions={mentionList}
+                onMentionClick={onMentionClick}
+              />
             </span>
           )}
           {caption && !hasMedia && URL_RE.test(caption) && <LinkPreview messageId={msg.id} />}

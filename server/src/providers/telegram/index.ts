@@ -1,6 +1,7 @@
 import { TelegramClient, Api } from 'telegram';
 import { StringSession } from 'telegram/sessions';
 import { NewMessage, Raw } from 'telegram/events';
+import bigInt from 'big-integer';
 import type { Entity } from 'telegram/define';
 import { getKv, setKv, getDb } from '../../store/db.js';
 import {
@@ -534,6 +535,25 @@ export class TelegramProvider implements Provider {
 
     let sent: Api.Message;
     const m = payload.media?.[0];
+
+    // Attach MessageEntityMentionName entities for @-picked participants.
+    const entities: Api.TypeMessageEntity[] = [];
+    const utf16 = (s: string) => s.length; // JS string length is already UTF-16 code units
+    for (const mention of payload.mentions ?? []) {
+      const userId = mention.memberId.startsWith('user:') ? mention.memberId.slice(5) : null;
+      if (!userId) continue;
+      const needle = `@${mention.name}`;
+      const offset = payload.body.indexOf(needle);
+      if (offset < 0) continue;
+      entities.push(
+        new Api.MessageEntityMentionName({
+          offset,
+          length: utf16(needle),
+          userId: bigInt(userId),
+        })
+      );
+    }
+
     if (m) {
       const buf = Buffer.from(m.data, 'base64');
       sent = (await this.client.sendFile(peer, {
@@ -559,7 +579,11 @@ export class TelegramProvider implements Provider {
         'send'
       );
     } else {
-      sent = await this.client.sendMessage(peer, { message: payload.body, replyTo });
+      sent = await this.client.sendMessage(peer, {
+        message: payload.body,
+        replyTo,
+        formattingEntities: entities.length ? entities : undefined,
+      });
       await ingest(
         {
           id: `${chat.remoteId}:${sent.id}`,
@@ -634,6 +658,26 @@ export class TelegramProvider implements Provider {
       );
     } catch {
       /* non-fatal */
+    }
+  }
+
+  /** Group members for @mention autocomplete. */
+  async fetchParticipants(chat: Chat): Promise<{ id: string; name: string }[] | null> {
+    if (!this.client || this.state !== 'open' || chat.type !== 'group') return null;
+    try {
+      const peer = await this.peerFor(chat.remoteId);
+      const users = await this.client.getParticipants(peer, { limit: 150 });
+      const out: { id: string; name: string }[] = [];
+      for (const u of users) {
+        if (u instanceof Api.User && !u.bot) {
+          const name = displayName(u);
+          this.nameCache.set(String(u.id), name);
+          out.push({ id: `user:${u.id}`, name });
+        }
+      }
+      return out;
+    } catch {
+      return null;
     }
   }
 

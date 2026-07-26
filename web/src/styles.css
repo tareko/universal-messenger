@@ -772,3 +772,11 @@ body {
 
 .msg-status-svg.blue { color: #34b7f1; }
 .msg-status.delivered, .msg-status.read { display: inline-flex; }
+
+.md-mention {
+  color: var(--accent); font-weight: 600; cursor: pointer;
+  background: rgba(0, 128, 105, 0.12); border-radius: 4px; padding: 0 2px;
+  text-decoration: none;
+}
+.md-mention:hover { background: rgba(0, 128, 105, 0.22); }
+.mention-source { font-size: 10px; color: var(--text-muted); margin-left: auto; }
