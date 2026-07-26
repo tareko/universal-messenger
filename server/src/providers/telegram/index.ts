@@ -468,11 +468,12 @@ export class TelegramProvider implements Provider {
     }
     if (!text && !hasImage) return false;
 
-    // Group sender display name (best effort from the dialogs cache).
+    // Group sender: store the user id (resolvable to a DM for reply-privately);
+    // the display name is hydrated from the names table at query time.
     let sender: string | undefined;
     if (isGroup && !msg.out) {
       const fromId = msg.fromId && 'userId' in msg.fromId ? String(msg.fromId.userId) : '';
-      sender = this.nameCache.get(fromId) ?? (fromId ? `user ${fromId}` : undefined);
+      if (fromId) sender = `user:${fromId}`;
     }
 
     const stored = await ingest(

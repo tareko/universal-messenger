@@ -705,7 +705,10 @@ function hydrateExtras(messages: Message[], chatIdArg: string): Message[] {
     const r = byTarget.get(m.id);
     if (r && r.length) out = { ...out, reactions: r };
     if (out.sender) {
-      const sn = getName(out.sender);
+      // Try the id as stored, then without any provider prefix ('user:123').
+      const sn =
+        getName(out.sender) ??
+        (out.sender.includes(':') ? getName(out.sender.split(':').pop()!) : null);
       if (sn) out = { ...out, senderName: sn };
     }
     if (out.quotedId) {

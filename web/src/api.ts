@@ -123,6 +123,8 @@ export const api = {
     getJson<Chat[]>(accountId ? `/chats?account=${encodeURIComponent(accountId)}` : '/chats'),
   newChat: (accountId: string, to: string) =>
     postJson<{ ok: boolean; chatId: string }>('/chats', { accountId, to }),
+  dmChat: (chatId: string, sender: string) =>
+    postJson<{ ok: boolean; chatId: string }>('/dm-chat', { chatId, sender }),
   messages: (chatId: string, before?: number) =>
     getJson<Message[]>(
       `/messages?chat=${encodeURIComponent(chatId)}${before ? `&before=${before}` : ''}`

@@ -354,6 +354,43 @@ api.put('/notify-settings', (req, res) => {
   res.json({ ok: true });
 });
 
+/**
+ * Resolve (creating if needed) the DM chat with a given sender on the same
+ * account as an existing chat — used by "reply privately" from groups.
+ */
+api.post('/dm-chat', async (req, res) => {
+  try {
+    const { chatId, sender } = req.body as { chatId: string; sender: string };
+    if (!chatId || !sender) return res.status(400).json({ error: 'chatId and sender required' });
+    const chat = getChat(chatId);
+    if (!chat) return res.status(404).json({ error: 'chat not found' });
+    const provider = providerForAccount(chat.accountId);
+    if (!provider) return res.status(400).json({ error: 'no provider for account' });
+
+    if (chat.provider === 'mattermost') {
+      // DM channels are opaque hashes — create/find via the API.
+      const mm = provider as MattermostProvider;
+      const channelId = await mm.createDmChannel(sender);
+      const dm = getOrCreateChat(chat.accountId, channelId, {
+        type: 'dm',
+        contactRaw: sender,
+        title: sender,
+      });
+      return res.json({ ok: true, chatId: dm.id });
+    }
+
+    if (chat.provider === 'voipms') {
+      return res.status(400).json({ error: 'no groups on this service' });
+    }
+
+    // whatsapp/signal: sender is a phone; telegram: sender is 'user:<id>'.
+    const dm = getOrCreateChat(chat.accountId, sender, { type: 'dm', contactRaw: sender });
+    res.json({ ok: true, chatId: dm.id });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 /** Pin/unpin a group chat into the main chat list. */
 api.post('/chats/pin', (req, res) => {
   const { chatId, pinned } = req.body as { chatId: string; pinned: boolean };

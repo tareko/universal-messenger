@@ -46,6 +46,7 @@ export function Thread() {
   const loadOlderMessages = useStore((s) => s.loadOlderMessages);
   const retryText = useStore((s) => s.retryText);
   const reactMessage = useStore((s) => s.reactMessage);
+  const replyPrivately = useStore((s) => s.replyPrivately);
   const setReplyTo = useStore((s) => s.setReplyTo);
   const scrollNonce = useStore((s) => s.scrollNonce);
   const [forwarding, setForwarding] = useState<Message | null>(null);
@@ -351,6 +352,7 @@ export function Thread() {
                 showProvider={Boolean(person)}
                 onReact={(emoji) => void reactMessage(m.id, emoji)}
                 onReply={() => setReplyTo(m)}
+                onReplyPrivately={() => void replyPrivately(m)}
                 onForward={() => setForwarding(m)}
                 onRetry={(msg) => void retryText(msg.id, msg.body)}
                 onQuoteClick={() => void jumpToMessage(m.quotedId!)}
@@ -382,6 +384,7 @@ function Bubble({
   showProvider,
   onReact,
   onReply,
+  onReplyPrivately,
   onForward,
   onRetry,
   onQuoteClick,
@@ -394,6 +397,7 @@ function Bubble({
   showProvider?: boolean;
   onReact: (emoji: string) => void;
   onReply: () => void;
+  onReplyPrivately: () => void;
   onForward: () => void;
   onRetry: (msg: Message) => void;
   onQuoteClick: () => void;
@@ -527,6 +531,11 @@ function Bubble({
                 {canReact && (
                   <button className="action-btn" title="React" onClick={() => setPicker(true)}>
                     😀
+                  </button>
+                )}
+                {isGroup && incoming && msg.sender && (
+                  <button className="action-btn" title="Reply privately" onClick={onReplyPrivately}>
+                    👤
                   </button>
                 )}
                 {canForward && (

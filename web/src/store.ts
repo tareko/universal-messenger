@@ -55,6 +55,7 @@ interface StoreState {
   retryText: (id: string, text: string) => Promise<void>;
   reactMessage: (messageId: string, emoji: string) => Promise<void>;
   forwardMessage: (messageId: string, targetChatId: string) => Promise<void>;
+  replyPrivately: (msg: Message) => Promise<void>;
   setReplyTo: (msg: Message | null) => void;
   markRead: (chatId: string) => Promise<void>;
   setStatus: (s: AppStatus) => void;
@@ -414,6 +415,23 @@ export const useStore = create<StoreState>((set, get) => ({
       await api.forward(messageId, targetChatId);
       await get().refreshChats();
       if (get().selectedChat === targetChatId) await get().refreshMessages();
+    } catch (e) {
+      set({ error: (e as Error).message });
+    }
+  },
+
+  /**
+   * WhatsApp-style "reply privately": open the DM with a group message's
+   * sender (same service) and quote their message. Cross-chat quotes fall
+   * back to "> quoted text" on send automatically.
+   */
+  replyPrivately: async (msg: Message) => {
+    if (!msg.sender) return;
+    try {
+      const r = await api.dmChat(msg.chatId, msg.sender);
+      await get().refreshChats();
+      await get().selectChat(r.chatId);
+      set({ replyTo: msg });
     } catch (e) {
       set({ error: (e as Error).message });
     }

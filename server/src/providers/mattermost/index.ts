@@ -592,6 +592,26 @@ export class MattermostProvider implements Provider {
   }
 
   /** Tell the channel we're typing (Mattermost relays this over its WS). */
+  /** Find-or-create a DM channel with a user (by username) for reply-privately. */
+  async createDmChannel(username: string): Promise<string> {
+    if (!this.me) throw new Error('mattermost not connected');
+    const user = await this.rest<{ id: string }>(
+      'GET',
+      `/users/username/${encodeURIComponent(username)}`
+    );
+    const channel = await this.rest<{ id: string; display_name?: string }>('POST', '/channels/direct', [
+      this.me.id,
+      user.id,
+    ]);
+    this.channelCache.set(channel.id, {
+      id: channel.id,
+      type: 'D',
+      display_name: username,
+      name: '',
+    } as never);
+    return channel.id;
+  }
+
   async sendTyping(chat: Chat): Promise<void> {
     if (!this.ws || this.state !== 'open') return;
     try {

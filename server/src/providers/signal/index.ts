@@ -341,7 +341,8 @@ export class SignalProvider implements Provider {
           chatType: groupId ? 'group' : 'dm',
           chatTitle: dm.groupInfo?.name,
           contactRaw: opts.outgoing ? (opts.destination ?? '') : (env.sourceName ?? source),
-          sender: groupId ? (env.sourceName ?? source) : undefined,
+          // Phone as sender id (enables reply-privately DM resolution).
+          sender: groupId ? (env.sourceNumber ?? env.sourceName ?? source) : undefined,
           ts: dm.timestamp || Date.now(),
           outgoing: opts.outgoing,
           body: text,
