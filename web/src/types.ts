@@ -80,6 +80,8 @@ export interface Chat {
   ephemeralSeconds?: number;
   /** Group pinned into the main chat list (1) vs Groups tab (0). */
   pinned?: number;
+  /** Shelved conversation (1 = Hidden tab until manually restored). */
+  hidden?: number;
   /** Set when this chat is linked into a person (identity group). */
   personId?: number | null;
 }

@@ -27,9 +27,9 @@ export function ChatList() {
   const [msgHits, setMsgHits] = useState<SearchHit[]>([]);
   const [loadingMore, setLoadingMore] = useState(false);
   const [exhausted, setExhausted] = useState(false);
-  // Sidebar tabs: main chats (dms + pinned groups), groups, channels.
-  const [tab, setTab] = useState<'chats' | 'groups' | 'channels'>(
-    () => (localStorage.getItem('um-tab') as 'chats' | 'groups' | 'channels') || 'chats'
+  // Sidebar tabs: main chats (dms + pinned groups), groups, channels, hidden.
+  const [tab, setTab] = useState<'chats' | 'groups' | 'channels' | 'hidden'>(
+    () => (localStorage.getItem('um-tab') as 'chats' | 'groups' | 'channels' | 'hidden') || 'chats'
   );
 
   const hasVoipMs = accounts.some((a) => a.provider === 'voipms');
@@ -37,8 +37,9 @@ export function ChatList() {
   // page back via thread scroll). Show it only when relevant.
   const showSmsBackfill =
     hasVoipMs && (selectedAccount === 'all' || selectedAccount.startsWith('voipms:'));
-  const channelCount = chats.filter((c) => c.type === 'channel').length;
-  const groupCount = chats.filter((c) => c.type === 'group').length;
+  const channelCount = chats.filter((c) => c.type === 'channel' && !c.hidden).length;
+  const groupCount = chats.filter((c) => c.type === 'group' && !c.hidden).length;
+  const hiddenCount = chats.filter((c) => c.hidden).length;
 
   useEffect(() => {
     const q = query.trim();
@@ -148,7 +149,7 @@ export function ChatList() {
     return rows.sort((a, b) => b.ts - a.ts);
   }, [filteredChats, people, chats, typing, selectedAccount, chatSubtitle]);
 
-  function switchTab(t: 'chats' | 'groups' | 'channels') {
+  function switchTab(t: 'chats' | 'groups' | 'channels' | 'hidden') {
     setTab(t);
     localStorage.setItem('um-tab', t);
   }
@@ -176,7 +177,7 @@ export function ChatList() {
 
   return (
     <div className="contact-list">
-      {(channelCount > 0 || groupCount > 0) && (
+      {(channelCount > 0 || groupCount > 0 || hiddenCount > 0) && (
         <div className="chat-tabs">
           <button
             className={`chat-tab${tab === 'chats' ? ' active' : ''}`}
@@ -198,6 +199,14 @@ export function ChatList() {
               onClick={() => switchTab('channels')}
             >
               📢 Channels ({channelCount})
+            </button>
+          )}
+          {hiddenCount > 0 && (
+            <button
+              className={`chat-tab${tab === 'hidden' ? ' active' : ''}`}
+              onClick={() => switchTab('hidden')}
+            >
+              📦 ({hiddenCount})
             </button>
           )}
         </div>

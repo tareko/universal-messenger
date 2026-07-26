@@ -40,12 +40,13 @@ export function notifyNewMessage(msg: Message, selectedChat: string | null) {
   if (isFocusedChat) return;
 
   const s = useStore.getState();
-  // Fine-grained rules: muted chat/person, per-provider toggles.
+  // Fine-grained rules: hidden chats, muted chat/person, per-provider toggles.
+  const chat = s.chats.find((c) => c.id === msg.chatId);
+  if (chat?.hidden) return;
   if (s.notifySettings.mutedChats.includes(msg.chatId)) return;
   const person = s.people.find((p) => p.chatIds.includes(msg.chatId));
   if (person && s.notifySettings.mutedChats.includes(`person:${person.id}`)) return;
   const provider = msg.accountId.split(':')[0];
-  const chat = s.chats.find((c) => c.id === msg.chatId);
   const rules = s.notifySettings.providers[provider];
   if (rules) {
     if (!rules.enabled) return;

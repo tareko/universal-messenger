@@ -41,6 +41,10 @@ export function saveNotifySettings(s: NotifySettings): void {
 /** Should a message in this chat produce a notification? */
 export function shouldNotify(chatId: string, settings?: NotifySettings): boolean {
   const s = settings ?? getNotifySettings();
+  const chat = getChat(chatId);
+
+  // Hidden conversations never notify.
+  if (chat?.hidden) return false;
 
   // Muted chat, or muted person containing this chat.
   if (s.mutedChats.includes(chatId)) return false;
@@ -51,7 +55,6 @@ export function shouldNotify(chatId: string, settings?: NotifySettings): boolean
   const provider = chatId.split(':')[0];
   const rules = s.providers[provider] ?? DEFAULT_RULES;
   if (!rules.enabled) return false;
-  const chat = getChat(chatId);
   const type = chat?.type ?? 'dm';
   if (type === 'dm' && !rules.dm) return false;
   if (type === 'group' && !rules.group) return false;

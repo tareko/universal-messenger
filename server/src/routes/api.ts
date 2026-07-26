@@ -17,6 +17,8 @@ import {
   getKv,
   setKv,
   setChatPinned,
+  setChatHidden,
+  setChatsHidden,
   getPeople,
   getChatPersonMap,
   createPerson,
@@ -357,6 +359,24 @@ api.post('/chats/pin', (req, res) => {
   const { chatId, pinned } = req.body as { chatId: string; pinned: boolean };
   if (!chatId) return res.status(400).json({ error: 'chatId required' });
   setChatPinned(chatId, Boolean(pinned));
+  broadcast({ type: 'chats-updated' });
+  res.json({ ok: true });
+});
+
+/**
+ * Hide/unhide a conversation. Also accepts 'person:N' — hides (or restores)
+ * ALL of that person's linked chats at once.
+ */
+api.post('/chats/hide', (req, res) => {
+  const { chatId, hidden } = req.body as { chatId: string; hidden: boolean };
+  if (!chatId) return res.status(400).json({ error: 'chatId required' });
+  if (chatId.startsWith('person:')) {
+    const person = getPeople().find((p) => p.id === Number(chatId.slice(7)));
+    if (!person) return res.status(404).json({ error: 'person not found' });
+    setChatsHidden(person.chatIds, Boolean(hidden));
+  } else {
+    setChatHidden(chatId, Boolean(hidden));
+  }
   broadcast({ type: 'chats-updated' });
   res.json({ ok: true });
 });

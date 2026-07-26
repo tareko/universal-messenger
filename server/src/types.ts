@@ -79,6 +79,8 @@ export interface Chat {
   ephemeralSeconds?: number;
   /** Group chat pinned into the main chat list (Groups tab otherwise). */
   pinned?: number;
+  /** Shelved conversation (Hidden tab until manually restored). */
+  hidden?: number;
 }
 
 export interface Contact {

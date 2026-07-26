@@ -148,6 +148,8 @@ export const api = {
   markRead: (chatId: string) => postJson('/markread', { chatId }),
   pinChat: (chatId: string, pinned: boolean) =>
     postJson<{ ok: boolean }>('/chats/pin', { chatId, pinned }),
+  hideChat: (chatId: string, hidden: boolean) =>
+    postJson<{ ok: boolean }>('/chats/hide', { chatId, hidden }),
   typing: (chatId: string) => postJson('/typing', { chatId }),
   fetchMedia: (messageId: string) =>
     postJson<{ ok: boolean; pending: boolean }>('/media/fetch', { messageId }),

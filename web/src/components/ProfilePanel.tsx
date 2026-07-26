@@ -152,6 +152,36 @@ export function ProfilePanel({
         )}
 
         <div className="profile-section">
+          <div className="profile-section-title">Visibility</div>
+          <button
+            className="dialog-cancel"
+            disabled={busy}
+            onClick={() =>
+              void run(async () => {
+                const key = person ? `person:${person.id}` : chat.id;
+                const hidden = person ? memberChats.every((c) => c.hidden) : Boolean(chat.hidden);
+                await api.hideChat(key, !hidden);
+                if (!hidden) {
+                  // Hiding the open conversation: close panel + thread.
+                  onClose();
+                  useStore.getState().closeChat();
+                }
+              })
+            }
+          >
+            {(
+              person
+                ? memberChats.every((c) => c.hidden)
+                : Boolean(chat.hidden)
+            )
+              ? '📦 Hidden — click to unhide'
+              : person
+                ? `Hide this person (all ${memberChats.length} services)`
+                : 'Hide conversation'}
+          </button>
+        </div>
+
+        <div className="profile-section">
           <div className="profile-section-title">Notifications</div>
           <button className="dialog-cancel" disabled={busy} onClick={() => void toggleMute(muteKey)}>
             {muted

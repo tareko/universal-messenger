@@ -156,6 +156,12 @@ export function initDb() {
   } catch {
     /* column exists */
   }
+  // Hidden conversations (shelved from all tabs until manually restored).
+  try {
+    db.exec('ALTER TABLE chats ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    /* column exists */
+  }
   return db;
 }
 
@@ -352,12 +358,27 @@ function rowToChat(r: Record<string, unknown>): Chat {
     ts: r.ts !== undefined ? Number(r.ts) : 0,
     ephemeralSeconds: Number(r.ephemeral_seconds ?? 0),
     pinned: Number(r.pinned ?? 0),
+    hidden: Number(r.hidden ?? 0),
   };
 }
 
 /** Pin/unpin a group chat into the main chat list (also unmutes it by default). */
 export function setChatPinned(chatIdArg: string, pinned: boolean): void {
   getDb().prepare('UPDATE chats SET pinned = ? WHERE id = ?').run(pinned ? 1 : 0, chatIdArg);
+}
+
+/** Hide/unhide a conversation (shelved from all tabs until manually restored). */
+export function setChatHidden(chatIdArg: string, hidden: boolean): void {
+  getDb().prepare('UPDATE chats SET hidden = ? WHERE id = ?').run(hidden ? 1 : 0, chatIdArg);
+}
+
+/** Hide/unhide many chats at once (e.g. all of a person's linked chats). */
+export function setChatsHidden(chatIds: string[], hidden: boolean): void {
+  const stmt = getDb().prepare('UPDATE chats SET hidden = ? WHERE id = ?');
+  const tx = getDb().transaction((ids: string[]) => {
+    for (const id of ids) stmt.run(hidden ? 1 : 0, id);
+  });
+  tx(chatIds);
 }
 
 /** Record a chat's disappearing-messages duration (seconds; 0 = off). */
