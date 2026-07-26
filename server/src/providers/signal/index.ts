@@ -66,6 +66,7 @@ export class SignalProvider implements Provider {
     delete: true,
     groups: true,
     attachments: true,
+    crossChatQuotes: false,
   };
 
   private state: SignalState = 'idle';

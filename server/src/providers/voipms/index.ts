@@ -19,6 +19,7 @@ export class VoipMsProvider implements Provider {
     delete: false,
     groups: false, // group MMS arrives expanded into 1:1 legs
     attachments: true,
+    crossChatQuotes: false,
   };
 
   private enabled = Boolean(config.voipms.username && config.voipms.password);

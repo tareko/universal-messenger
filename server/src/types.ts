@@ -19,6 +19,12 @@ export interface Capabilities {
   delete: boolean;
   groups: boolean;
   attachments: boolean;
+  /**
+   * Native quotes can reference a message in a DIFFERENT chat on the same
+   * account (WhatsApp: "reply privately" keeps a link to the group message).
+   * When false, cross-chat quotes fall back to "> quoted text".
+   */
+  crossChatQuotes: boolean;
 }
 
 export interface Account {

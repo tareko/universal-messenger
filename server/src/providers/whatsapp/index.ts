@@ -71,6 +71,7 @@ export class WhatsAppProvider implements Provider {
     delete: true,
     groups: true,
     attachments: true,
+    crossChatQuotes: true, // native quotes can reference the original (group) chat
   };
 
   private sock: WASocket | null = null;

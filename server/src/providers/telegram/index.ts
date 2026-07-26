@@ -53,6 +53,7 @@ export class TelegramProvider implements Provider {
     delete: true,
     groups: true,
     attachments: true,
+    crossChatQuotes: false,
   };
 
   private client: TelegramClient | null = null;

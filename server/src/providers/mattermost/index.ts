@@ -94,6 +94,7 @@ export class MattermostProvider implements Provider {
     delete: true,
     groups: true, // channels + group DMs
     attachments: true,
+    crossChatQuotes: false,
   };
 
   private state: MmState = 'idle';

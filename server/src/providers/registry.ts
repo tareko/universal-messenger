@@ -15,6 +15,7 @@ const NONE: Capabilities = {
   delete: false,
   groups: false,
   attachments: false,
+  crossChatQuotes: false,
 };
 
 const providers = new Map<string, Provider>();
