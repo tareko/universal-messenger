@@ -454,9 +454,10 @@ export class WhatsAppProvider implements Provider {
       : null;
 
     // Capture display names for the names table (drives sender display).
+    // Lid-keyed too — migrated to the phone number when the lid resolves.
     if (msg.pushName && !key.fromMe) {
       if (!isGroup && !chatRemoteId.endsWith('@lid')) setName(chatRemoteId, msg.pushName);
-      if (sender && !sender.endsWith('@lid')) setName(sender, msg.pushName);
+      if (sender) setName(sender, msg.pushName);
     }
 
     // Rewrite @<number> mentions to @Name using everything we know.
@@ -698,7 +699,21 @@ export class WhatsAppProvider implements Provider {
     if (!pn) return jid;
     const phone = phoneFromJid(`${pn}@s.whatsapp.net`);
     // Fold the lid-keyed chat (if any) into the phone-keyed one.
-    if (this.accountId) mergeChats(`${this.accountId}:${jid}`, `${this.accountId}:${phone}`);
+    if (this.accountId) {
+      mergeChats(`${this.accountId}:${jid}`, `${this.accountId}:${phone}`);
+      // Carry a lid-keyed pushname over to the phone number.
+      const lidName = (
+        getDb().prepare('SELECT name FROM names WHERE id = ?').get(jid) as
+          | { name: string }
+          | undefined
+      )?.name;
+      const phoneName = (
+        getDb().prepare('SELECT name FROM names WHERE id = ?').get(phone) as
+          | { name: string }
+          | undefined
+      )?.name;
+      if (lidName && !phoneName) setName(phone, lidName);
+    }
     return phone;
   }
 

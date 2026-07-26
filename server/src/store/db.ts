@@ -394,10 +394,9 @@ export function setChatEphemeral(chatIdArg: string, seconds: number): void {
 }
 
 /**
- * Chat list across one or all accounts: last message per chat + unread count,
- * with the address-book name resolved for dm chats. Chats with no messages are
- * hidden unless they're DMs (a freshly-created dm may legitimately be empty;
- * empty groups from provider syncs are just noise).
+ * Chat list across one or all accounts: last message per chat + unread count.
+ * Display name resolution order: CardDAV contact (your own naming) →
+ * provider pushname (names table) → chat title → raw contact id.
  */
 export function getChats(accountId?: string): Chat[] {
   const where = accountId
@@ -406,11 +405,12 @@ export function getChats(accountId?: string): Chat[] {
   const args: unknown[] = accountId ? [accountId] : [];
   const rows = getDb()
     .prepare(
-      `SELECT c.*, ct.name,
+      `SELECT c.*, COALESCE(ct.name, nm.name) AS name,
               m.ts AS ts, m.id AS last_id,
               (SELECT COUNT(*) FROM messages u WHERE u.chat_id = c.id AND u.outgoing = 0 AND u.read = 0) AS unread
        FROM chats c
        LEFT JOIN contacts ct ON ct.tel = c.remote_id
+       LEFT JOIN names nm ON nm.id = c.remote_id
        LEFT JOIN messages m ON m.chat_id = c.id
          AND m.ts = (SELECT MAX(m2.ts) FROM messages m2 WHERE m2.chat_id = c.id)
        ${where}
