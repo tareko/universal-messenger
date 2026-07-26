@@ -248,8 +248,8 @@ body {
 .bubble-wrap.out .react-trigger { right: -10px; }
 
 .react-bar {
-  position: absolute; bottom: calc(100% + 6px); z-index: 40;
-  left: 50%; transform: translateX(-50%);
+  position: absolute; bottom: calc(100% + 4px); z-index: 40;
+  left: 50%; transform: translateX(-50%); white-space: nowrap;
   display: flex; gap: 2px; background: #fff; border: 1px solid var(--border);
   border-radius: 18px; padding: 4px 6px; box-shadow: 0 4px 14px rgba(0,0,0,0.18);
 }
@@ -398,7 +398,7 @@ body {
 
 /* ---------- Reply / forward (phase 3) ---------- */
 .hover-actions {
-  position: absolute; top: 50%; transform: translateY(-50%); z-index: 6;
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 45;
   display: flex; gap: 3px;
 }
 .hover-actions.in { left: calc(100% + 6px); }

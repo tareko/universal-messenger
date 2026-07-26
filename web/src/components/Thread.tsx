@@ -495,43 +495,46 @@ function Bubble({
         <div className="react-backdrop" onClick={() => setPicker(false)} />
       )}
       <div className={`bubble-wrap ${incoming ? 'in' : 'out'}`}>
-        {picker && !morePicker && (
-          <div className="react-bar centered">
-            {emojiSet.map((e) => (
-              <button
-                key={e}
-                className="react-bar-emoji"
-                title={e}
-                onClick={() => {
-                  onReact(e);
-                  setPicker(false);
-                }}
-              >
-                {e}
-              </button>
-            ))}
-            {allowMore && (
-              <button
-                className="react-bar-emoji react-bar-more"
-                title="More emojis"
-                onClick={() => setMorePicker(true)}
-              >
-                ➕
-              </button>
-            )}
-          </div>
-        )}
         {hover && (canReact || canForward) && (
           <div className={`hover-actions ${incoming ? 'in' : 'out'}`}>
-            {canReact && (
-              <button className="action-btn" title="React" onClick={() => setPicker(true)}>
-                😀
-              </button>
-            )}
-            {canForward && (
-              <button className="action-btn" title="Forward" onClick={onForward}>
-                ↪
-              </button>
+            {picker && !morePicker ? (
+              <div className="react-bar">
+                {emojiSet.map((e) => (
+                  <button
+                    key={e}
+                    className="react-bar-emoji"
+                    title={e}
+                    onClick={() => {
+                      onReact(e);
+                      setPicker(false);
+                    }}
+                  >
+                    {e}
+                  </button>
+                ))}
+                {allowMore && (
+                  <button
+                    className="react-bar-emoji react-bar-more"
+                    title="More emojis"
+                    onClick={() => setMorePicker(true)}
+                  >
+                    ➕
+                  </button>
+                )}
+              </div>
+            ) : (
+              <>
+                {canReact && (
+                  <button className="action-btn" title="React" onClick={() => setPicker(true)}>
+                    😀
+                  </button>
+                )}
+                {canForward && (
+                  <button className="action-btn" title="Forward" onClick={onForward}>
+                    ↪
+                  </button>
+                )}
+              </>
             )}
           </div>
         )}
