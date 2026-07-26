@@ -71,6 +71,8 @@ export function ChatList() {
 
   const filteredChats = useMemo(() => {
     const byTab = chats.filter((c) => {
+      if (tab === 'hidden') return Boolean(c.hidden);
+      if (c.hidden) return false; // hidden conversations leave the other tabs
       if (tab === 'channels') return c.type === 'channel';
       if (tab === 'groups') return c.type === 'group';
       // Main: dms + pinned groups (groups default to the Groups tab).
