@@ -588,9 +588,10 @@ export class WhatsAppProvider implements Provider {
 
       // DM read/delivery receipts arrive as message status updates
       // (group receipts come via message-receipt.update instead).
+      // Status enum: PENDING=1, SERVER_ACK=2, DELIVERY_ACK=3, READ=4, PLAYED=5.
       const st = Number(update.status);
-      if (st >= 1) {
-        const receiptStatus = st >= 3 ? 'read' : st >= 2 ? 'delivered' : 'sent';
+      if (st >= 2) {
+        const receiptStatus = st >= 4 ? 'read' : st === 3 ? 'delivered' : 'sent';
         if (updateMessageReceipt(id, receiptStatus)) {
           const updated = getMessage(id);
           if (updated) broadcast({ type: 'message-updated', data: updated });
