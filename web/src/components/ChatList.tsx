@@ -34,9 +34,9 @@ export function ChatList() {
 
   const hasVoipMs = accounts.some((a) => a.provider === 'voipms');
   // The voip.ms 90-day backfill only applies to SMS accounts (other providers
-  // page back via thread scroll). Show it only when relevant.
+  // page back via thread scroll). Show it only on the main tab when relevant.
   const showSmsBackfill =
-    hasVoipMs && (selectedAccount === 'all' || selectedAccount.startsWith('voipms:'));
+    hasVoipMs && tab === 'chats' && (selectedAccount === 'all' || selectedAccount.startsWith('voipms:'));
   const channelCount = chats.filter((c) => c.type === 'channel' && !c.hidden).length;
   const groupCount = chats.filter((c) => c.type === 'group' && !c.hidden).length;
   const hiddenCount = chats.filter((c) => c.hidden).length;
