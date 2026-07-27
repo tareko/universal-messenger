@@ -488,6 +488,8 @@ export class WhatsAppProvider implements Provider {
         media,
         mediaPending,
         quotedRemoteId: ctx?.stanzaId ?? undefined,
+        // WhatsApp marks forwards in contextInfo (isForwarded/forwardingScore).
+        forwardedFrom: (ctx as { isForwarded?: boolean } | null)?.isForwarded ? 'incoming' : undefined,
       },
     };
   }
