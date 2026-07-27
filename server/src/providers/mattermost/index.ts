@@ -422,7 +422,7 @@ export class MattermostProvider implements Provider {
           const from = r.user_id === this.me?.id ? 'me' : (this.userCache.get(r.user_id) ?? r.user_id);
           if (event === 'reaction_added') {
             addReaction({
-              id: `${targetId}:${from}`,
+              id: `${targetId}:${from}:${emoji}`,
               messageId: targetId,
               chatId: `${this.accountId}:${data.channel_id ?? ''}`,
               emoji,
@@ -752,7 +752,7 @@ export class MattermostProvider implements Provider {
       emoji_name: emojiName,
     });
     addReaction({
-      id: `${target.id}:me`,
+      id: `${target.id}:me:${emoji}`,
       messageId: target.id,
       chatId: chat.id,
       emoji,
