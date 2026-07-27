@@ -84,6 +84,7 @@ export const useStore = create<StoreState>((set, get) => ({
   selectedChat: null,
   messages: [],
   replyTo: null,
+  drafts: {},
   hasOlder: true,
   loadingOlder: false,
   unreadAtOpen: 0,
@@ -126,8 +127,7 @@ export const useStore = create<StoreState>((set, get) => ({
     }
     set({
       selectedChat: chatId,
-  replyTo: null,
-  drafts: {},
+      replyTo: null,
       hasOlder: true,
       // Keep failed/in-flight bubbles for this chat so they survive switching.
       messages: get().messages.filter(
