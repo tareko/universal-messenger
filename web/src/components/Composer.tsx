@@ -93,6 +93,7 @@ export function Composer() {
   const sendMessage = useStore((s) => s.sendMessage);
   const sendMedia = useStore((s) => s.sendMedia);
   const [text, setText] = useState('');
+  const setDraft = useStore((s) => s.setDraft);
   const [attachment, setAttachment] = useState<Attachment | null>(null);
   const [prepError, setPrepError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -125,6 +126,8 @@ export function Composer() {
     setMentions([]);
     setParticipants([]);
     setAiSuggestions(null);
+    // Restore this chat's draft (empty box for chats without one).
+    setText(selectedChat ? (useStore.getState().drafts[selectedChat] ?? '') : '');
     // Load group participants for @mention autocomplete.
     if (chat?.type === 'group') {
       void api.participants(chat.id).then(setParticipants).catch(() => setParticipants([]));
@@ -175,6 +178,11 @@ export function Composer() {
   useEffect(() => {
     if (replyTo) taRef.current?.focus();
   }, [replyTo]);
+
+  // Persist the draft continuously (cheap) so it survives chat switches.
+  useEffect(() => {
+    if (selectedChat) setDraft(selectedChat, text);
+  }, [text, selectedChat, setDraft]);
 
   // Tell the provider we're typing (throttled; providers time it out themselves).
   const lastTypingSent = useRef(0);

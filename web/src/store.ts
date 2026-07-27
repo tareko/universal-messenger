@@ -19,6 +19,8 @@ interface StoreState {
   selectedChat: string | null; // chat id, or 'person:<id>' for a linked person
   messages: Message[];
   replyTo: Message | null; // message being quoted in the composer
+  /** Unsent composer text retained per chat. */
+  drafts: Record<string, string>;
   hasOlder: boolean; // more history available (DB or provider-side)
   loadingOlder: boolean;
   unreadAtOpen: number; // unread count captured when the chat was opened
@@ -59,6 +61,7 @@ interface StoreState {
   forwardMessage: (messageId: string, targetChatId: string) => Promise<void>;
   replyPrivately: (msg: Message) => Promise<void>;
   setReplyTo: (msg: Message | null) => void;
+  setDraft: (chatId: string, text: string) => void;
   markRead: (chatId: string) => Promise<void>;
   setStatus: (s: AppStatus) => void;
   patchStatus: (p: { providers?: Record<string, string>; carddav?: string }) => void;
@@ -123,7 +126,8 @@ export const useStore = create<StoreState>((set, get) => ({
     }
     set({
       selectedChat: chatId,
-      replyTo: null,
+  replyTo: null,
+  drafts: {},
       hasOlder: true,
       // Keep failed/in-flight bubbles for this chat so they survive switching.
       messages: get().messages.filter(
@@ -448,6 +452,9 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   setReplyTo: (msg) => set({ replyTo: msg }),
+
+  setDraft: (chatId, text) =>
+    set((s) => ({ drafts: text ? { ...s.drafts, [chatId]: text } : Object.fromEntries(Object.entries(s.drafts).filter(([k]) => k !== chatId)) })),
 
   markRead: async (chatId: string) => {
     const ids = isPersonSelection(chatId) ? memberChatIds(get()) : [chatId];
