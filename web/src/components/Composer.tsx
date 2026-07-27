@@ -101,6 +101,7 @@ export function Composer() {
   const [selIdx, setSelIdx] = useState(0);
   const [aiSuggestions, setAiSuggestions] = useState<string[] | null>(null);
   const [suggesting, setSuggesting] = useState(false);
+  const [suggestError, setSuggestError] = useState<string | null>(null);
   // @mention autocomplete state
   const [mentionToken, setMentionToken] = useState<EmojiToken | null>(null);
   const [mentionIdx, setMentionIdx] = useState(0);
@@ -364,11 +365,15 @@ export function Composer() {
   async function fetchSuggestions() {
     if (!selectedChat || suggesting) return;
     setSuggesting(true);
+    setSuggestError(null);
     try {
       const r = await api.aiSuggest(selectedChat);
       setAiSuggestions(r.suggestions.length ? r.suggestions : null);
-    } catch {
+      if (!r.suggestions.length) setSuggestError('No suggestions came back');
+    } catch (e) {
       setAiSuggestions(null);
+      setSuggestError((e as Error).message);
+      setTimeout(() => setSuggestError(null), 4000);
     } finally {
       setSuggesting(false);
     }
@@ -410,12 +415,18 @@ export function Composer() {
         />
         {aiEnabled && (
           <button
-            className="tool-btn"
-            title="Suggest replies (AI)"
+            className={`tool-btn${suggesting ? ' spin' : ''}${suggestError ? ' error' : ''}`}
+            title={
+              suggesting
+                ? 'Asking the AI for reply suggestions…'
+                : suggestError
+                  ? `Suggestions failed: ${suggestError}`
+                  : 'Suggest replies (AI)'
+            }
             disabled={suggesting}
             onClick={() => void fetchSuggestions()}
           >
-            {suggesting ? '…' : '✨'}
+            ✨
           </button>
         )}
         <button

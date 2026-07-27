@@ -849,3 +849,10 @@ body {
   cursor: pointer;
 }
 .tag-color-dot.active { border-color: var(--text); }
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.tool-btn.spin { animation: spin 0.9s linear infinite; }
+.tool-btn.error { color: var(--danger); }
