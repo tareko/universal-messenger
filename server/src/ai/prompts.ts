@@ -73,12 +73,14 @@ export function suggestRepliesPrompt(chatName: string, history: string): ChatMes
     {
       role: 'system',
       content:
-        `${SAFETY}\nThis is a conversation between "You" (the owner) and "${name}". ` +
-        `Lines starting "You:" are the owner's OWN messages — do NOT reply to those or continue the owner's thread. ` +
-        `Lines starting "${name}:" are the other person. ` +
-        `Suggest 3 short replies the OWNER might send in response to the OTHER person's most recent message. ` +
-        'Match the language and tone of the conversation. Output exactly 3 candidate replies, ' +
-        'one per line, no numbering, no quotes, no explanations. Each under 200 characters.',
+        `${SAFETY}\nYou are a GHOSTWRITER, not a conversation participant. You draft messages for the owner of this app to send.\n` +
+        `Transcript format: "You:" = the OWNER (your client). "${name}:" = the OTHER person.\n` +
+        'Write 3 short messages the OWNER could send NEXT, addressed to the other person. They MUST:\n' +
+        "- be written FROM the owner's perspective, in the owner's voice, as the owner would say them\n" +
+        '- respond to what the OTHER person said most recently\n' +
+        '- NEVER respond to or comment on the owner\'s own lines as if you were the other person\n' +
+        'Match the language and tone of the conversation. Exactly 3 messages, one per line, ' +
+        'no numbering, no quotes, no explanations. Each under 200 characters.',
     },
     { role: 'user', content: fence(history) },
   ];
