@@ -1,6 +1,12 @@
 import { Router } from 'express';
 import { getChat } from '../store/db.js';
 import { aiEnabled, suggestReplies, summarizeChat, translateText } from '../ai/actions.js';
+import {
+  startBulkClassify,
+  getClassifyProgress,
+  classifyOneAsync,
+  computeFrequentContacts,
+} from '../ai/tagging.js';
 
 export const aiApi = Router();
 
@@ -59,4 +65,28 @@ aiApi.post('/ai/translate', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
+});
+
+/** Start a bulk chat-classification job. */
+aiApi.post('/ai/classify', (req, res) => {
+  const { force } = req.body as { force?: boolean };
+  startBulkClassify(Boolean(force));
+  res.json({ ok: true });
+});
+
+aiApi.get('/ai/classify/status', (_req, res) => {
+  res.json(getClassifyProgress());
+});
+
+/** Classify one chat on demand. */
+aiApi.post('/ai/classify-chat', (req, res) => {
+  const { chatId } = req.body as { chatId: string };
+  if (!chatId) return res.status(400).json({ error: 'chatId required' });
+  classifyOneAsync(chatId);
+  res.json({ ok: true });
+});
+
+/** Recompute stats-driven tags (frequent contact). */
+aiApi.post('/ai/stats-tags', (_req, res) => {
+  res.json({ frequentContacts: computeFrequentContacts() });
 });

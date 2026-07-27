@@ -96,6 +96,13 @@ export interface Contact {
   rawTel: string;
 }
 
+export interface Tag {
+  id: number;
+  name: string;
+  description: string;
+  color: string;
+}
+
 export type SseEvent =
   | { type: 'message'; data: Message }
   | { type: 'message-updated'; data: Message }

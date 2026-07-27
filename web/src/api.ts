@@ -1,4 +1,4 @@
-import type { Account, AppStatus, Chat, Contact, Message, NotifySettings, Person } from './types';
+import type { Account, AppStatus, Chat, Contact, Message, NotifySettings, Person, Tag } from './types';
 
 const base = '/api';
 
@@ -159,6 +159,31 @@ export const api = {
     postJson<{ suggestions: string[] }>('/ai/suggest', { chatId }),
   aiTranslate: (text: string, targetLang?: string) =>
     postJson<{ translation: string }>('/ai/translate', { text, targetLang }),
+  tags: () => getJson<Tag[]>('/tags'),
+  createTag: (name: string, description: string, color: string) =>
+    postJson<{ ok: boolean; id: number }>('/tags', { name, description, color }),
+  deleteTag: (id: number) =>
+    fetch(`${base}/tags/${id}`, { method: 'DELETE', headers: authHeaders() }).then(async (r) => {
+      if (!r.ok) throw new Error(await errorMessage(r));
+      return (await r.json()) as { ok: boolean };
+    }),
+  setChatTags: (chatId: string, tagIds: number[]) =>
+    postJson<{ ok: boolean }>('/chats/tags', { chatId, tagIds }),
+  removeChatTag: (chatId: string, tagId: number) =>
+    fetch(`${base}/chats/tags/${encodeURIComponent(chatId)}/${tagId}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    }).then(async (r) => {
+      if (!r.ok) throw new Error(await errorMessage(r));
+      return (await r.json()) as { ok: boolean };
+    }),
+  aiClassifyStart: (force?: boolean) => postJson<{ ok: boolean }>('/ai/classify', { force }),
+  aiClassifyStatus: () =>
+    getJson<{ running: boolean; total: number; done: number; tagged: number; lastError?: string }>(
+      '/ai/classify/status'
+    ),
+  aiClassifyChat: (chatId: string) => postJson<{ ok: boolean }>('/ai/classify-chat', { chatId }),
+  aiStatsTags: () => postJson<{ frequentContacts: number }>('/ai/stats-tags', {}),
   linkPreview: (messageId: string) =>
     getJson<{ preview: LinkPreview | null }>(`/link-preview?msg=${encodeURIComponent(messageId)}`),
   whatsappCheck: (number: string) =>

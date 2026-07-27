@@ -103,6 +103,21 @@ export function initDb() {
       name      TEXT,
       PRIMARY KEY (chat_id, member_id)
     );
+
+    CREATE TABLE IF NOT EXISTS tags (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      name        TEXT NOT NULL UNIQUE,
+      description TEXT NOT NULL DEFAULT '',
+      color       TEXT NOT NULL DEFAULT '#008069'
+    );
+
+    CREATE TABLE IF NOT EXISTS chat_tags (
+      chat_id TEXT NOT NULL,
+      tag_id  INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+      source  TEXT NOT NULL DEFAULT 'ai',  -- 'ai' | 'manual' | 'stats'
+      locked  INTEGER NOT NULL DEFAULT 0,  -- manual overrides lock against AI re-tagging
+      PRIMARY KEY (chat_id, tag_id)
+    );
   `);
 
   // Full-text search index over message bodies (external-content FTS5).
@@ -854,6 +869,95 @@ export function getChatParticipants(chatIdArg: string): Participant[] {
 export function getParticipantsAge(chatIdArg: string): number {
   const ts = Number(getKv(`participants_ts:${chatIdArg}`) ?? '0');
   return ts ? Date.now() - ts : Infinity;
+}
+
+// ---------- tags (chat categorization) ----------
+export interface Tag {
+  id: number;
+  name: string;
+  description: string;
+  color: string;
+}
+
+export function getTags(): Tag[] {
+  return (getDb().prepare('SELECT * FROM tags ORDER BY name COLLATE NOCASE').all() as Record<string, unknown>[]).map(
+    (r) => ({
+      id: Number(r.id),
+      name: String(r.name),
+      description: String(r.description ?? ''),
+      color: String(r.color),
+    })
+  );
+}
+
+export function createTag(name: string, description: string, color: string): number {
+  const res = getDb()
+    .prepare('INSERT INTO tags(name, description, color) VALUES(?, ?, ?) ON CONFLICT(name) DO UPDATE SET description = excluded.description, color = excluded.color')
+    .run(name, description, color);
+  return Number(res.lastInsertRowid);
+}
+
+export function deleteTag(id: number): void {
+  getDb().prepare('DELETE FROM chat_tags WHERE tag_id = ?').run(id);
+  getDb().prepare('DELETE FROM tags WHERE id = ?').run(id);
+}
+
+export interface ChatTagAssignment {
+  chatId: string;
+  tagId: number;
+  source: string;
+  locked: boolean;
+}
+
+export function setChatTags(
+  chatId: string,
+  assignments: { tagId: number; source: 'ai' | 'manual' | 'stats' }[]
+): void {
+  const tx = getDb().transaction((items: typeof assignments) => {
+    // AI/stats re-tagging replaces only their own source's rows; manual rows stay.
+    const sources = [...new Set(items.map((a) => a.source))];
+    for (const source of sources) {
+      getDb().prepare('DELETE FROM chat_tags WHERE chat_id = ? AND source = ? AND locked = 0').run(chatId, source);
+    }
+    const stmt = getDb().prepare(
+      'INSERT INTO chat_tags(chat_id, tag_id, source, locked) VALUES(?, ?, ?, ?) ON CONFLICT(chat_id, tag_id) DO UPDATE SET source = excluded.source, locked = excluded.locked'
+    );
+    for (const a of items) stmt.run(chatId, a.tagId, a.source, a.source === 'manual' ? 1 : 0);
+  });
+  tx(assignments);
+}
+
+export function getChatTags(chatIdArg?: string): (ChatTagAssignment & { name: string; color: string })[] {
+  const rows = (
+    chatIdArg
+      ? getDb()
+          .prepare('SELECT ct.*, t.name, t.color FROM chat_tags ct JOIN tags t ON t.id = ct.tag_id WHERE ct.chat_id = ?')
+          .all(chatIdArg)
+      : getDb().prepare('SELECT ct.*, t.name, t.color FROM chat_tags ct JOIN tags t ON t.id = ct.tag_id').all()
+  ) as Record<string, unknown>[];
+  return rows.map((r) => ({
+    chatId: String(r.chat_id),
+    tagId: Number(r.tag_id),
+    source: String(r.source),
+    locked: Boolean(r.locked),
+    name: String(r.name),
+    color: String(r.color),
+  }));
+}
+
+export function removeChatTag(chatId: string, tagId: number): void {
+  getDb().prepare('DELETE FROM chat_tags WHERE chat_id = ? AND tag_id = ?').run(chatId, tagId);
+}
+
+/** Tag ids per chat (for annotating the chat list). */
+export function getChatTagMap(): Map<string, { id: number; name: string; color: string; source: string }[]> {
+  const map = new Map<string, { id: number; name: string; color: string; source: string }[]>();
+  for (const t of getChatTags()) {
+    const arr = map.get(t.chatId) ?? [];
+    arr.push({ id: t.tagId, name: t.name, color: t.color, source: t.source });
+    map.set(t.chatId, arr);
+  }
+  return map;
 }
 
 // ---------- people (cross-provider identity linking) ----------

@@ -27,6 +27,7 @@ export function ChatList() {
   const [msgHits, setMsgHits] = useState<SearchHit[]>([]);
   const [loadingMore, setLoadingMore] = useState(false);
   const [exhausted, setExhausted] = useState(false);
+  const [tagFilter, setTagFilter] = useState<number | null>(null);
   // Sidebar tabs: main chats (dms + pinned groups), groups, channels, hidden.
   const [tab, setTab] = useState<'chats' | 'groups' | 'channels' | 'hidden'>(
     () => (localStorage.getItem('um-tab') as 'chats' | 'groups' | 'channels' | 'hidden') || 'chats'
@@ -79,8 +80,12 @@ export function ChatList() {
       return c.type === 'dm' || (c.type === 'group' && Boolean(c.pinned));
     });
     const q = query.trim().toLowerCase();
-    if (!q) return byTab;
-    return byTab.filter(
+    let rows = byTab;
+    if (tagFilter !== null) {
+      rows = rows.filter((c) => c.tags?.some((t) => t.id === tagFilter));
+    }
+    if (!q) return rows;
+    return rows.filter(
       (c) =>
         c.name?.toLowerCase().includes(q) ||
         c.title?.toLowerCase().includes(q) ||
@@ -89,7 +94,16 @@ export function ChatList() {
         (c.personId != null &&
           people.find((p) => p.id === c.personId)?.name.toLowerCase().includes(q))
     );
-  }, [chats, query, tab, people]);
+  }, [chats, query, tab, people, tagFilter]);
+
+  // Unique tags present across visible chats (for the filter chip row).
+  const presentTags = useMemo(() => {
+    const map = new Map<number, { id: number; name: string; color: string }>();
+    for (const c of chats) {
+      for (const t of c.tags ?? []) map.set(t.id, t);
+    }
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [chats]);
 
   /** Person-grouped rows: linked chats collapse into one row per person. */
   const displayRows = useMemo(() => {
@@ -105,6 +119,7 @@ export function ChatList() {
       group?: boolean;
       channel?: boolean;
       pinned?: boolean;
+      tags?: { id: number; name: string; color: string }[];
     }
     const rows: Row[] = [];
     const seenPeople = new Set<number>();
@@ -130,6 +145,7 @@ export function ChatList() {
           linked: true,
           group: latest.type === 'group',
           channel: latest.type === 'channel',
+          tags: [...new Map(members.flatMap((x) => x.tags ?? []).map((t) => [t.id, t])).values()],
         });
       } else {
         const sub = chatSubtitle(c);
@@ -145,6 +161,7 @@ export function ChatList() {
           group: c.type === 'group',
           channel: c.type === 'channel',
           pinned: Boolean(c.pinned),
+          tags: c.tags,
         });
       }
     }
@@ -226,6 +243,21 @@ export function ChatList() {
           </button>
         )}
       </div>
+      {presentTags.length > 0 && (
+        <div className="tag-filter-row">
+          {presentTags.map((t) => (
+            <button
+              key={t.id}
+              className={`tag-chip${tagFilter === t.id ? ' active' : ''}`}
+              style={{ borderColor: t.color, color: tagFilter === t.id ? '#fff' : t.color, background: tagFilter === t.id ? t.color : 'transparent' }}
+              title={`Filter by ${t.name}`}
+              onClick={() => setTagFilter(tagFilter === t.id ? null : t.id)}
+            >
+              {t.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="contact-list-scroll">
         {showingSearch ? (
@@ -245,6 +277,7 @@ export function ChatList() {
                   group={r.group}
                   channel={r.channel}
                   pinned={r.pinned}
+                  tags={r.tags}
                   onClick={() => void selectChat(r.selId)}
                 />
               ))}
@@ -295,6 +328,7 @@ export function ChatList() {
               group={r.group}
               channel={r.channel}
               pinned={r.pinned}
+              tags={r.tags}
               onClick={() => void selectChat(r.selId)}
             />
           ))
@@ -349,6 +383,7 @@ function ChatRow({
   group,
   channel,
   pinned,
+  tags,
   onClick,
 }: {
   name: string;
@@ -363,6 +398,7 @@ function ChatRow({
   group?: boolean;
   channel?: boolean;
   pinned?: boolean;
+  tags?: { id: number; name: string; color: string }[];
   onClick: () => void;
 }) {
   const allBadges = badges ?? (badge ? [badge] : []);
@@ -384,6 +420,15 @@ function ChatRow({
         </div>
         <div className="contact-row-bottom">
           <span className={`contact-preview${subtitleTyping ? ' typing' : ''}`} dir="auto">{subtitle}</span>
+          {tags && tags.length > 0 && (
+            <span className="tag-chip-row">
+              {tags.map((t) => (
+                <span key={t.id} className="tag-mini" style={{ borderColor: t.color, color: t.color }}>
+                  {t.name}
+                </span>
+              ))}
+            </span>
+          )}
           {unread > 0 ? <span className="unread-badge">{unread}</span> : null}
         </div>
       </div>

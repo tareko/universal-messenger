@@ -5,6 +5,7 @@ import { requestNotificationPermission } from './hooks/useNotifications';
 import { AccountSwitcher } from './components/AccountSwitcher';
 import { AccountsDialog } from './components/AccountsDialog';
 import { NotificationsDialog } from './components/NotificationsDialog';
+import { AiDialog } from './components/AiDialog';
 import { ChatList } from './components/ChatList';
 import { Thread } from './components/Thread';
 import { Composer } from './components/Composer';
@@ -17,8 +18,10 @@ export function App() {
   const loading = useStore((s) => s.loading);
   const error = useStore((s) => s.error);
   const selectedChat = useStore((s) => s.selectedChat);
+  const aiEnabled = useStore((s) => s.status?.ai?.enabled ?? false);
   const [accountsOpen, setAccountsOpen] = useState(false);
   const [notifyOpen, setNotifyOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
 
   useEffect(() => {
     void init();
@@ -34,7 +37,7 @@ export function App() {
           </button>
         </header>
         <ChatList />
-        <StatusBar status={status} sseStatus={sseStatus} onOpenNotify={() => setNotifyOpen(true)} />
+        <StatusBar status={status} sseStatus={sseStatus} onOpenNotify={() => setNotifyOpen(true)} onOpenAi={() => setAiOpen(true)} aiEnabled={aiEnabled} />
       </aside>
 
       <main className="main">
@@ -46,6 +49,7 @@ export function App() {
 
       {accountsOpen && <AccountsDialog onClose={() => setAccountsOpen(false)} />}
       {notifyOpen && <NotificationsDialog onClose={() => setNotifyOpen(false)} />}
+      {aiOpen && <AiDialog onClose={() => setAiOpen(false)} />}
     </div>
   );
 }
@@ -54,10 +58,14 @@ function StatusBar({
   status,
   sseStatus,
   onOpenNotify,
+  onOpenAi,
+  aiEnabled,
 }: {
   status: ReturnType<typeof useStore.getState>['status'];
   sseStatus: 'connecting' | 'connected';
   onOpenNotify: () => void;
+  onOpenAi: () => void;
+  aiEnabled: boolean;
 }) {
   const [stealth, setStealth] = useState(() => localStorage.getItem('um-hide-previews') === '1');
   if (!status) return null;
@@ -82,6 +90,11 @@ function StatusBar({
       </span>
       <span title={providerSummary}>📡</span>
       <span title={`Contacts: ${status.carddav}`}>👤</span>
+      {aiEnabled && (
+        <button className="stealth-toggle" title="AI settings" onClick={onOpenAi}>
+          ✨
+        </button>
+      )}
       <button
         className={`stealth-toggle${stealth ? ' on' : ''}`}
         title={stealth ? 'Notification previews hidden — click to show' : 'Hide notification previews'}

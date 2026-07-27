@@ -22,6 +22,12 @@ import {
   getChatParticipants,
   replaceChatParticipants,
   getParticipantsAge,
+  getTags,
+  createTag,
+  deleteTag,
+  setChatTags,
+  getChatTagMap,
+  removeChatTag,
   getPeople,
   getChatPersonMap,
   createPerson,
@@ -441,7 +447,46 @@ api.get('/chats', (req, res) => {
   const account = String(req.query.account || '');
   const chats = getChats(account || undefined);
   const personMap = getChatPersonMap();
-  res.json(chats.map((c) => ({ ...c, personId: personMap.get(c.id) ?? null })));
+  const tagMap = getChatTagMap();
+  res.json(chats.map((c) => ({ ...c, personId: personMap.get(c.id) ?? null, tags: tagMap.get(c.id) ?? [] })));
+});
+
+// ---------- tag taxonomy (manual management; AI classification is under /api/ai) ----------
+
+api.get('/tags', (_req, res) => {
+  res.json(getTags());
+});
+
+api.post('/tags', (req, res) => {
+  const { name, description, color } = req.body as { name?: string; description?: string; color?: string };
+  if (!name?.trim()) return res.status(400).json({ error: 'name required' });
+  const id = createTag(name.trim().toLowerCase(), description ?? '', color ?? '#008069');
+  broadcast({ type: 'chats-updated' });
+  res.json({ ok: true, id });
+});
+
+api.delete('/tags/:id', (req, res) => {
+  deleteTag(Number(req.params.id));
+  broadcast({ type: 'chats-updated' });
+  res.json({ ok: true });
+});
+
+/** Manually set a chat's tags (locks them against AI re-tagging). */
+api.post('/chats/tags', (req, res) => {
+  const { chatId, tagIds } = req.body as { chatId: string; tagIds: number[] };
+  if (!chatId || !Array.isArray(tagIds)) return res.status(400).json({ error: 'chatId and tagIds required' });
+  setChatTags(
+    chatId,
+    tagIds.map((tagId) => ({ tagId, source: 'manual' as const }))
+  );
+  broadcast({ type: 'chats-updated' });
+  res.json({ ok: true });
+});
+
+api.delete('/chats/tags/:chatId/:tagId', (req, res) => {
+  removeChatTag(String(req.params.chatId), Number(req.params.tagId));
+  broadcast({ type: 'chats-updated' });
+  res.json({ ok: true });
 });
 
 // ---------- people (cross-provider identity linking) ----------

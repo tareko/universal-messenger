@@ -8,6 +8,8 @@ import { aiApi } from './routes/ai.js';
 import { addClient } from './realtime/sse.js';
 import { startProviders } from './providers/registry.js';
 import { syncContacts } from './contacts/carddav.js';
+import { computeFrequentContacts } from './ai/tagging.js';
+import { createTag, getTags } from './store/db.js';
 
 async function main() {
   checkConfig();
@@ -58,6 +60,16 @@ async function main() {
   // Background workers
   void syncContacts();
   setInterval(() => void syncContacts(), Math.max(60_000, config.nextcloud.syncIntervalMs));
+  // Seed the AI taxonomy on first run (before stats tags create theirs).
+  if (getTags().length === 0) {
+    createTag('hospital', 'Day job / work at the hospital', '#d32f2f');
+    createTag('glia', 'Glia — medical nonprofit project', '#008069');
+    createTag('palestine', 'Palestinian cause, news, and related topics', '#2e7d32');
+    createTag('personal', 'Family and personal life', '#1976d2');
+  }
+  // Stats-driven tags (frequent contact) — at boot and daily.
+  void computeFrequentContacts();
+  setInterval(() => void computeFrequentContacts(), 24 * 3600_000);
   await startProviders();
 }
 

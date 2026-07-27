@@ -4,7 +4,7 @@ import { useStore } from '../store';
 import { Avatar } from './Avatar';
 import { providerBadge } from './AccountSwitcher';
 import { formatTime } from './Thread';
-import type { Chat, Person } from '../types';
+import type { Chat, Person, Tag } from '../types';
 
 /**
  * Right-drawer profile for a chat or linked person: identity details, linked
@@ -32,6 +32,11 @@ export function ProfilePanel({
   const [busy, setBusy] = useState(false);
   const [onWhatsApp, setOnWhatsApp] = useState<boolean | null>(null);
   const [numbers, setNumbers] = useState<string[]>([]);
+  const [taxonomy, setTaxonomy] = useState<Tag[]>([]);
+
+  useEffect(() => {
+    void api.tags().then(setTaxonomy).catch(() => {});
+  }, []);
 
   const isDm = chat.type === 'dm';
   const account = accounts.find((a) => a.id === chat.accountId);
@@ -190,6 +195,48 @@ export function ProfilePanel({
                 : '🔕 Muted — click to unmute'
               : '🔔 Enabled — click to mute'}
           </button>
+        </div>
+
+        <div className="profile-section">
+          <div className="profile-section-title">Tags</div>
+          <div className="profile-tags">
+            {(chat.tags ?? []).map((t) => (
+              <span key={t.id} className="tag-mini" style={{ borderColor: t.color, color: t.color }}>
+                {t.name}
+                <button
+                  className="tag-remove"
+                  title="Remove tag"
+                  disabled={busy}
+                  onClick={() => void run(() => api.removeChatTag(chat.id, t.id))}
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+            {(chat.tags ?? []).length === 0 && <span className="profile-hint">No tags yet.</span>}
+          </div>
+          <div className="profile-tag-add">
+            <select
+              value=""
+              disabled={busy}
+              onChange={(e) => {
+                const tagId = Number(e.target.value);
+                if (!tagId) return;
+                void run(() =>
+                  api.setChatTags(chat.id, [...(chat.tags ?? []).map((t) => t.id), tagId])
+                );
+              }}
+            >
+              <option value="">+ Add tag…</option>
+              {taxonomy
+                .filter((t) => !(chat.tags ?? []).some((ct) => ct.id === t.id))
+                .map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+            </select>
+          </div>
         </div>
 
         <div className="profile-section">

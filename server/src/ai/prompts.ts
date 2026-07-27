@@ -112,6 +112,39 @@ export function translatePrompt(text: string, targetLang?: string): ChatMessage[
   ];
 }
 
+export interface TaxonomyEntry {
+  name: string;
+  description: string;
+}
+
+/** Strict-JSON chat classifier prompt with the user's taxonomy. */
+export function classifyPrompt(
+  taxonomy: TaxonomyEntry[],
+  history: string,
+  examples: { sample: string; tags: string[] }[]
+): ChatMessage[] {
+  const taxText = taxonomy
+    .map((t) => `- "${t.name}": ${t.description}`)
+    .join('\n');
+  const exampleText =
+    examples.length > 0
+      ? '\nExamples of the owner\'s tagging style:\n' +
+        examples.map((e) => `MESSAGES:\n${e.sample}\nTAGS: ${e.tags.join(', ')}`).join('\n\n')
+      : '';
+  return [
+    {
+      role: 'system',
+      content:
+        `${SAFETY}\nYou categorize chats into tags. Available tags:\n${taxText}\n` +
+        'Assign ZERO OR MORE tags that genuinely fit the conversation — only confident matches, ' +
+        'nothing if unsure. ' +
+        'Output ONLY strict JSON: {"tags": ["name", ...], "confidence": "high"|"low"}.' +
+        exampleText,
+    },
+    { role: 'user', content: fence(history) },
+  ];
+}
+
 export function estimateHistoryTokens(lines: HistoryLine[]): number {
   return estTokens(lines.reduce((n, l) => n + l.sender.length + l.body.length + 20, 0));
 }

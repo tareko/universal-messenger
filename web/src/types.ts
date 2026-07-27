@@ -85,6 +85,15 @@ export interface Chat {
   hidden?: number;
   /** Set when this chat is linked into a person (identity group). */
   personId?: number | null;
+  /** Assigned tags (AI/manual/stats). */
+  tags?: { id: number; name: string; color: string; source: string }[];
+}
+
+export interface Tag {
+  id: number;
+  name: string;
+  description: string;
+  color: string;
 }
 
 export interface Person {
