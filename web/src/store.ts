@@ -407,8 +407,13 @@ export const useStore = create<StoreState>((set, get) => ({
   reactMessage: async (messageId: string, emoji: string) => {
     const { selectedChat, messages } = get();
     if (!selectedChat) return;
+    const target = messages.find((m) => m.id === messageId);
+    // Mattermost allows multiple reactions per user; others replace.
+    const multiReact = target?.accountId.split(':')[0] === 'mattermost';
     const next = messages.map((m) =>
-      m.id === messageId ? { ...m, reactions: setMyReaction(m.reactions, emoji) } : m
+      m.id === messageId
+        ? { ...m, reactions: multiReact ? addMyReaction(m.reactions, emoji) : setMyReaction(m.reactions, emoji) }
+        : m
     );
     set({ messages: next });
     try {
@@ -418,7 +423,7 @@ export const useStore = create<StoreState>((set, get) => ({
       set({
         messages: get().messages.map((m) =>
           m.id === messageId
-            ? { ...m, reactions: (m.reactions ?? []).filter((r) => r.from !== 'me') }
+            ? { ...m, reactions: (m.reactions ?? []).filter((r) => !(r.from === 'me' && r.emoji === emoji)) }
             : m
         ),
         error: (e as Error).message,
@@ -599,6 +604,12 @@ function resolveTargetChat(s: StoreState, override?: string): string {
 function setMyReaction(reactions: Message['reactions'], emoji: string) {
   const others = (reactions ?? []).filter((r) => r.from !== 'me');
   return [...others, { emoji, from: 'me' }];
+}
+
+/** Mattermost semantics: multiple of my reactions coexist (dedupe same emoji). */
+function addMyReaction(reactions: Message['reactions'], emoji: string) {
+  const kept = (reactions ?? []).filter((r) => !(r.from === 'me' && r.emoji === emoji));
+  return [...kept, { emoji, from: 'me' }];
 }
 
 function clientDate(ts: number): string {
