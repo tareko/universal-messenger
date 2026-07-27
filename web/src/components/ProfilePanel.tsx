@@ -208,6 +208,15 @@ export function ProfilePanel({
             />
             Enable message translation (🌐) for this chat
           </label>
+          <label className="profile-radio">
+            <input
+              type="checkbox"
+              checked={Boolean(chat.suggestEnabled)}
+              disabled={busy}
+              onChange={(e) => void run(() => api.setSuggestEnabled(chat.id, e.target.checked))}
+            />
+            Auto-suggest replies (✨) when I open this chat
+          </label>
         </div>
 
         <div className="profile-section">

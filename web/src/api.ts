@@ -154,6 +154,8 @@ export const api = {
     postJson<{ ok: boolean }>('/chats/hide', { chatId, hidden }),
   setTranslateEnabled: (chatId: string, enabled: boolean) =>
     postJson<{ ok: boolean }>('/chats/translate', { chatId, enabled }),
+  setSuggestEnabled: (chatId: string, enabled: boolean) =>
+    postJson<{ ok: boolean }>('/chats/suggest', { chatId, enabled }),
   typing: (chatId: string) => postJson('/typing', { chatId }),
   fetchMedia: (messageId: string) =>
     postJson<{ ok: boolean; pending: boolean }>('/media/fetch', { messageId }),

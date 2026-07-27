@@ -90,6 +90,8 @@ export interface Chat {
   hidden?: number;
   /** AI translate action enabled for this chat (off by default). */
   translateEnabled?: number;
+  /** Auto AI reply suggestions when the chat is opened. */
+  suggestEnabled?: number;
 }
 
 export interface Contact {

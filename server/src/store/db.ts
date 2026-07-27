@@ -190,6 +190,12 @@ export function initDb() {
   } catch {
     /* column exists */
   }
+  // Per-chat opt-in for auto AI reply suggestions on chat open.
+  try {
+    db.exec('ALTER TABLE chats ADD COLUMN suggest_enabled INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    /* column exists */
+  }
   return db;
 }
 
@@ -388,6 +394,7 @@ function rowToChat(r: Record<string, unknown>): Chat {
     pinned: Number(r.pinned ?? 0),
     hidden: Number(r.hidden ?? 0),
     translateEnabled: Number(r.translate_enabled ?? 0),
+    suggestEnabled: Number(r.suggest_enabled ?? 0),
   };
 }
 
@@ -399,6 +406,11 @@ export function setChatPinned(chatIdArg: string, pinned: boolean): void {
 /** Enable/disable the AI translate action for a chat (off by default). */
 export function setChatTranslateEnabled(chatIdArg: string, enabled: boolean): void {
   getDb().prepare('UPDATE chats SET translate_enabled = ? WHERE id = ?').run(enabled ? 1 : 0, chatIdArg);
+}
+
+/** Enable/disable auto AI reply suggestions when the chat is opened. */
+export function setChatSuggestEnabled(chatIdArg: string, enabled: boolean): void {
+  getDb().prepare('UPDATE chats SET suggest_enabled = ? WHERE id = ?').run(enabled ? 1 : 0, chatIdArg);
 }
 
 /** Hide/unhide a conversation (shelved from all tabs until manually restored). */

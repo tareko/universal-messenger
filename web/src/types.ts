@@ -85,6 +85,8 @@ export interface Chat {
   hidden?: number;
   /** AI translate action enabled for this chat (0 = off by default). */
   translateEnabled?: number;
+  /** Auto AI reply suggestions when the chat is opened. */
+  suggestEnabled?: number;
   /** Set when this chat is linked into a person (identity group). */
   personId?: number | null;
   /** Assigned tags (AI/manual/stats). */

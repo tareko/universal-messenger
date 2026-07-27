@@ -20,6 +20,7 @@ import {
   setChatHidden,
   setChatsHidden,
   setChatTranslateEnabled,
+  setChatSuggestEnabled,
   getChatParticipants,
   replaceChatParticipants,
   getParticipantsAge,
@@ -417,6 +418,15 @@ api.post('/chats/translate', (req, res) => {
   const { chatId, enabled } = req.body as { chatId: string; enabled: boolean };
   if (!chatId) return res.status(400).json({ error: 'chatId required' });
   setChatTranslateEnabled(chatId, Boolean(enabled));
+  broadcast({ type: 'chats-updated' });
+  res.json({ ok: true });
+});
+
+/** Enable/disable auto AI reply suggestions on chat open. */
+api.post('/chats/suggest', (req, res) => {
+  const { chatId, enabled } = req.body as { chatId: string; enabled: boolean };
+  if (!chatId) return res.status(400).json({ error: 'chatId required' });
+  setChatSuggestEnabled(chatId, Boolean(enabled));
   broadcast({ type: 'chats-updated' });
   res.json({ ok: true });
 });

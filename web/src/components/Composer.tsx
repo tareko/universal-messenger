@@ -129,6 +129,10 @@ export function Composer() {
     setAiSuggestions(null);
     // Restore this chat's draft (empty box for chats without one).
     setText(selectedChat ? (useStore.getState().drafts[selectedChat] ?? '') : '');
+    // Auto-suggest replies for chats opted in via the profile.
+    if (chat?.suggestEnabled && aiEnabled && selectedChat) {
+      void fetchSuggestions();
+    }
     // Load group participants for @mention autocomplete.
     if (chat?.type === 'group') {
       void api.participants(chat.id).then(setParticipants).catch(() => setParticipants([]));
