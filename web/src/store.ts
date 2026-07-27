@@ -482,6 +482,10 @@ export const useStore = create<StoreState>((set, get) => ({
   patchStatus: (p) => set((s) => (s.status ? { ...s, status: { ...s.status, ...p } } : s)),
   setAccounts: (a) => set({ accounts: a }),
   setPendingJump: (id) => set({ pendingJump: id }),
+  targetChatId: () => {
+    if (!get().selectedChat) return null;
+    return resolveTargetChat(get());
+  },
 
   onMessage: async (msg) => {
     const { selectedChat, messages } = get();
