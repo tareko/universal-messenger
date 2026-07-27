@@ -104,6 +104,12 @@ export function initDb() {
       PRIMARY KEY (chat_id, member_id)
     );
 
+    CREATE TABLE IF NOT EXISTS receipt_readers (
+      message_id TEXT NOT NULL,
+      reader     TEXT NOT NULL,
+      PRIMARY KEY (message_id, reader)
+    );
+
     CREATE TABLE IF NOT EXISTS tags (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       name        TEXT NOT NULL UNIQUE,
@@ -893,6 +899,30 @@ export function getChatParticipants(chatIdArg: string): Participant[] {
 export function getParticipantsAge(chatIdArg: string): number {
   const ts = Number(getKv(`participants_ts:${chatIdArg}`) ?? '0');
   return ts ? Date.now() - ts : Infinity;
+}
+
+// ---------- per-reader group receipts ----------
+export function addReceiptReader(messageId: string, reader: string): void {
+  getDb()
+    .prepare(
+      'INSERT INTO receipt_readers(message_id, reader) VALUES(?, ?) ON CONFLICT(message_id, reader) DO NOTHING'
+    )
+    .run(messageId, reader);
+}
+
+export function countReceiptReaders(messageId: string): number {
+  const row = getDb()
+    .prepare('SELECT COUNT(*) AS n FROM receipt_readers WHERE message_id = ?')
+    .get(messageId) as { n: number };
+  return row.n;
+}
+
+/** Group member count excluding our own account (recipients only). */
+export function recipientCount(chatIdArg: string, selfId: string): number {
+  const row = getDb()
+    .prepare('SELECT COUNT(*) AS n FROM chat_participants WHERE chat_id = ? AND member_id != ?')
+    .get(chatIdArg, selfId) as { n: number };
+  return row.n;
 }
 
 // ---------- tags (chat categorization) ----------

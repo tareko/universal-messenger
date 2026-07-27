@@ -20,18 +20,23 @@ import type { Chat, Message } from '../../types.js';
 import type { Provider, SendPayload, SendResult } from '../types.js';
 import {
   addReaction,
+  addReceiptReader,
+  countReceiptReaders,
   getDb,
   getMessage,
   getMessages,
   getName,
   getOldestMessage,
+  getChat,
   getOrCreateChat,
   getReactionsForMessage,
   getMediaPending,
   fillMediaPending,
   markMessageDeleted,
   mergeChats,
+  recipientCount,
   removeReactions,
+  replaceChatParticipants,
   rewriteBodyFragment,
   rewriteSender,
   setAccountStatus,
@@ -152,24 +157,49 @@ export class WhatsAppProvider implements Provider {
     // Read/delivery receipts for our outgoing messages.
     sock.ev.on('message-receipt.update', (updates) => {
       if (!this.accountId) return;
-      for (const { key, receipt } of updates) {
-        try {
-          if (!key.id) continue;
-          const id = `${this.accountId}:${key.id}`;
-          const status = receipt.readTimestamp
-            ? 'read'
-            : receipt.deliveredDeviceJid?.length || receipt.receiptTimestamp
-              ? 'delivered'
-              : null;
-          if (!status) continue;
-          if (updateMessageReceipt(id, status)) {
-            const updated = getMessage(id);
-            if (updated) broadcast({ type: 'message-updated', data: updated });
+      void (async () => {
+        for (const { key, receipt } of updates) {
+          try {
+            if (!key.id) continue;
+            const id = `${this.accountId}:${key.id}`;
+            const chatId = `${this.accountId}:${key.remoteJid}`;
+            const isGroup = Boolean(key.remoteJid?.endsWith('@g.us'));
+
+            if (receipt.readTimestamp) {
+              if (isGroup) {
+                // Group blue = ALL recipients read. Track per-reader.
+                const reader = receipt.userJid ? await this.phoneFromJid(receipt.userJid) : null;
+                if (reader) addReceiptReader(id, reader);
+
+                const selfPhone = this.accountId!.slice('whatsapp:'.length);
+                let total = recipientCount(chatId, selfPhone);
+                if (total === 0) {
+                  // Participant list not fetched yet — fetch now.
+                  const chat = getChat(chatId);
+                  if (chat) {
+                    const parts = await this.fetchParticipants(chat);
+                    if (parts?.length) replaceChatParticipants(chatId, parts);
+                    total = recipientCount(chatId, selfPhone);
+                  }
+                }
+                const readers = countReceiptReaders(id);
+                if (total > 0 && readers < total) {
+                  // Partial: show delivered until everyone has read.
+                  if (updateMessageReceipt(id, 'delivered')) this.broadcastUpdated(id);
+                } else if (updateMessageReceipt(id, 'read')) {
+                  this.broadcastUpdated(id);
+                }
+              } else if (updateMessageReceipt(id, 'read')) {
+                this.broadcastUpdated(id);
+              }
+            } else if (receipt.deliveredDeviceJid?.length || receipt.receiptTimestamp) {
+              if (updateMessageReceipt(id, 'delivered')) this.broadcastUpdated(id);
+            }
+          } catch {
+            /* skip individual receipts */
           }
-        } catch {
-          /* skip individual receipts */
         }
-      }
+      })();
     });
     sock.ev.on('presence.update', ({ id, presences }) => {
       if (!this.accountId) return;
@@ -764,6 +794,12 @@ export class WhatsAppProvider implements Provider {
     } catch (e) {
       console.error('[whatsapp] lid sweep failed:', (e as Error).message);
     }
+  }
+
+  /** Broadcast a message refreshed with its current state. */
+  private broadcastUpdated(id: string): void {
+    const updated = getMessage(id);
+    if (updated) broadcast({ type: 'message-updated', data: updated });
   }
 
   /** Fetch a newsletter's name and set it as the chat title (once). */
