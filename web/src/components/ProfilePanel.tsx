@@ -198,6 +198,19 @@ export function ProfilePanel({
         </div>
 
         <div className="profile-section">
+          <div className="profile-section-title">AI features</div>
+          <label className="profile-radio">
+            <input
+              type="checkbox"
+              checked={Boolean(chat.translateEnabled)}
+              disabled={busy}
+              onChange={(e) => void run(() => api.setTranslateEnabled(chat.id, e.target.checked))}
+            />
+            Enable message translation (🌐) for this chat
+          </label>
+        </div>
+
+        <div className="profile-section">
           <div className="profile-section-title">Tags</div>
           <div className="profile-tags">
             {(chat.tags ?? []).map((t) => (

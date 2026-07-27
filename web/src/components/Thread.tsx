@@ -464,6 +464,7 @@ export function Thread() {
                 canReply={canReply}
                 provider={account?.provider ?? ''}
                 showProvider={Boolean(person)}
+                canTranslate={Boolean(chat.translateEnabled)}
                 onReact={(emoji) => void reactMessage(m.id, emoji)}
                 onReply={() => setReplyTo(m)}
                 onReplyPrivately={() => void replyPrivately(m)}
@@ -514,6 +515,7 @@ function Bubble({
   canReply,
   provider,
   showProvider,
+  canTranslate,
   onReact,
   onReply,
   onReplyPrivately,
@@ -527,6 +529,7 @@ function Bubble({
   canReply: boolean;
   provider: string;
   showProvider?: boolean;
+  canTranslate?: boolean;
   onReact: (emoji: string) => void;
   onReply: () => void;
   onReplyPrivately: () => void;
@@ -698,7 +701,7 @@ function Bubble({
                     👤
                   </button>
                 )}
-                {aiEnabled && msg.body && (
+                {aiEnabled && msg.body && canTranslate && (
                   <button
                     className="action-btn"
                     title="Translate"

@@ -83,6 +83,8 @@ export interface Chat {
   pinned?: number;
   /** Shelved conversation (1 = Hidden tab until manually restored). */
   hidden?: number;
+  /** AI translate action enabled for this chat (0 = off by default). */
+  translateEnabled?: number;
   /** Set when this chat is linked into a person (identity group). */
   personId?: number | null;
   /** Assigned tags (AI/manual/stats). */

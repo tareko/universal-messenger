@@ -19,6 +19,7 @@ import {
   setChatPinned,
   setChatHidden,
   setChatsHidden,
+  setChatTranslateEnabled,
   getChatParticipants,
   replaceChatParticipants,
   getParticipantsAge,
@@ -407,6 +408,15 @@ api.post('/chats/pin', (req, res) => {
   const { chatId, pinned } = req.body as { chatId: string; pinned: boolean };
   if (!chatId) return res.status(400).json({ error: 'chatId required' });
   setChatPinned(chatId, Boolean(pinned));
+  broadcast({ type: 'chats-updated' });
+  res.json({ ok: true });
+});
+
+/** Enable/disable the AI translate action for a chat. */
+api.post('/chats/translate', (req, res) => {
+  const { chatId, enabled } = req.body as { chatId: string; enabled: boolean };
+  if (!chatId) return res.status(400).json({ error: 'chatId required' });
+  setChatTranslateEnabled(chatId, Boolean(enabled));
   broadcast({ type: 'chats-updated' });
   res.json({ ok: true });
 });

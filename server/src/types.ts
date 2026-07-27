@@ -88,6 +88,8 @@ export interface Chat {
   pinned?: number;
   /** Shelved conversation (Hidden tab until manually restored). */
   hidden?: number;
+  /** AI translate action enabled for this chat (off by default). */
+  translateEnabled?: number;
 }
 
 export interface Contact {

@@ -184,6 +184,12 @@ export function initDb() {
   } catch {
     /* column exists */
   }
+  // Per-chat opt-in for the AI translate action (off by default).
+  try {
+    db.exec('ALTER TABLE chats ADD COLUMN translate_enabled INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    /* column exists */
+  }
   return db;
 }
 
@@ -381,12 +387,18 @@ function rowToChat(r: Record<string, unknown>): Chat {
     ephemeralSeconds: Number(r.ephemeral_seconds ?? 0),
     pinned: Number(r.pinned ?? 0),
     hidden: Number(r.hidden ?? 0),
+    translateEnabled: Number(r.translate_enabled ?? 0),
   };
 }
 
 /** Pin/unpin a group chat into the main chat list (also unmutes it by default). */
 export function setChatPinned(chatIdArg: string, pinned: boolean): void {
   getDb().prepare('UPDATE chats SET pinned = ? WHERE id = ?').run(pinned ? 1 : 0, chatIdArg);
+}
+
+/** Enable/disable the AI translate action for a chat (off by default). */
+export function setChatTranslateEnabled(chatIdArg: string, enabled: boolean): void {
+  getDb().prepare('UPDATE chats SET translate_enabled = ? WHERE id = ?').run(enabled ? 1 : 0, chatIdArg);
 }
 
 /** Hide/unhide a conversation (shelved from all tabs until manually restored). */
