@@ -16,9 +16,10 @@ const SUMMARY_BUDGET = 48_000; // chars of history (~13k tokens)
 /** 3 short draft replies based on the tail of the conversation. */
 export async function suggestReplies(chat: Chat): Promise<string[]> {
   const messages = getMessages(chat.id, 40);
-  const lines = historyWithinBudget(toHistoryLines(messages), SUGGEST_BUDGET);
+  const chatName = chat.name ?? chat.title ?? 'them';
+  const lines = historyWithinBudget(toHistoryLines(messages, 'You', chatName), SUGGEST_BUDGET);
   if (!lines.length) return [];
-  const raw = await aiChat(suggestRepliesPrompt(chat.name ?? chat.title ?? 'chat', formatHistory(lines)), {
+  const raw = await aiChat(suggestRepliesPrompt(chatName, formatHistory(lines)), {
     maxTokens: 300,
     temperature: 0.6,
     noThinking: true,
