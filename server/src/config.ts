@@ -50,6 +50,11 @@ export const config = {
   auth: {
     token: process.env.APP_API_TOKEN || '', // optional bearer token; if unset, open (rely on VPN)
   },
+  ai: {
+    baseUrl: (process.env.AI_BASE_URL || '').replace(/\/+$/, ''),
+    model: process.env.AI_MODEL || '',
+    enabled: process.env.AI_ENABLED === 'true' && Boolean(process.env.AI_BASE_URL && process.env.AI_MODEL),
+  },
 };
 
 export function checkConfig() {

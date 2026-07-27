@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { config, checkConfig } from './config.js';
 import { initDb } from './store/db.js';
 import { api, checkAuth } from './routes/api.js';
+import { aiApi } from './routes/ai.js';
 import { addClient } from './realtime/sse.js';
 import { startProviders } from './providers/registry.js';
 import { syncContacts } from './contacts/carddav.js';
@@ -18,6 +19,7 @@ async function main() {
 
   // API + SSE (SSE accepts ?token= since EventSource can't set headers)
   app.use('/api', api);
+  app.use('/api', aiApi);
   app.get('/events', (req, res) => {
     if (!checkAuth(req as never)) return res.status(401).end();
     addClient(res);

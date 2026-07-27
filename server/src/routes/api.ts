@@ -42,6 +42,8 @@ import { TelegramProvider } from '../providers/telegram/index.js';
 import { MattermostProvider } from '../providers/mattermost/index.js';
 import { SignalProvider } from '../providers/signal/index.js';
 import { syncContacts, getCarddavStatus } from '../contacts/carddav.js';
+import { aiEnabled } from '../ai/actions.js';
+import { config as appConfig } from '../config.js';
 import { getNotifySettings, saveNotifySettings, type NotifySettings } from '../notify/settings.js';
 import { broadcast } from '../realtime/sse.js';
 import { getMediaPath, mediaContentType, saveUploadedMedia, loadMediaBuffer } from '../services/media.js';
@@ -427,6 +429,7 @@ api.get('/status', (_req, res) => {
     carddav: getCarddavStatus(),
     webhook: { configured: Boolean(config.webhook.key), publicUrl: config.webhook.publicUrl },
     accounts: listAccounts(),
+    ai: { enabled: aiEnabled(), model: aiEnabled() ? appConfig.ai.model : null },
   });
 });
 
