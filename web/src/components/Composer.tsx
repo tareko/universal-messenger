@@ -87,6 +87,7 @@ export function Composer() {
   const selectedChat = useStore((s) => s.selectedChat);
   const chats = useStore((s) => s.chats);
   const people = useStore((s) => s.people);
+  const aiEnabled = useStore((s) => s.status?.ai?.enabled ?? false);
   const replyTo = useStore((s) => s.replyTo);
   const setReplyTo = useStore((s) => s.setReplyTo);
   const sendMessage = useStore((s) => s.sendMessage);
@@ -97,6 +98,8 @@ export function Composer() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [token, setToken] = useState<EmojiToken | null>(null);
   const [selIdx, setSelIdx] = useState(0);
+  const [aiSuggestions, setAiSuggestions] = useState<string[] | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
   // @mention autocomplete state
   const [mentionToken, setMentionToken] = useState<EmojiToken | null>(null);
   const [mentionIdx, setMentionIdx] = useState(0);
@@ -121,6 +124,7 @@ export function Composer() {
     setTargetOverride(null);
     setMentions([]);
     setParticipants([]);
+    setAiSuggestions(null);
     // Load group participants for @mention autocomplete.
     if (chat?.type === 'group') {
       void api.participants(chat.id).then(setParticipants).catch(() => setParticipants([]));
@@ -349,6 +353,25 @@ export function Composer() {
     }
   }
 
+  async function fetchSuggestions() {
+    if (!selectedChat || suggesting) return;
+    setSuggesting(true);
+    try {
+      const r = await api.aiSuggest(selectedChat);
+      setAiSuggestions(r.suggestions.length ? r.suggestions : null);
+    } catch {
+      setAiSuggestions(null);
+    } finally {
+      setSuggesting(false);
+    }
+  }
+
+  function applySuggestion(text2: string) {
+    setText(text2);
+    setAiSuggestions(null);
+    taRef.current?.focus();
+  }
+
   if (!selectedChat) return null;
 
   // WhatsApp channels (newsletters) are broadcast-only for followers.
@@ -377,6 +400,16 @@ export function Composer() {
           style={{ display: 'none' }}
           onChange={(e) => void onPickFile(e.target.files?.[0])}
         />
+        {aiEnabled && (
+          <button
+            className="tool-btn"
+            title="Suggest replies (AI)"
+            disabled={suggesting}
+            onClick={() => void fetchSuggestions()}
+          >
+            {suggesting ? '…' : '✨'}
+          </button>
+        )}
         <button
           className="tool-btn"
           title="Attach image"
@@ -396,6 +429,19 @@ export function Composer() {
       </div>
 
       <div className="composer-input-col">
+        {aiSuggestions && (
+          <div className="ai-suggestions">
+            <div className="ai-suggestions-head">
+              <span>✨ AI suggestions</span>
+              <button className="attach-remove" onClick={() => setAiSuggestions(null)}>✕</button>
+            </div>
+            {aiSuggestions.map((sug, i) => (
+              <button key={i} className="ai-suggestion" onClick={() => applySuggestion(sug)} dir="auto">
+                {sug}
+              </button>
+            ))}
+          </div>
+        )}
         {showMentionSuggest && (
           <div className="emoji-suggest">
             {mentionCandidates.map((c, i) => (

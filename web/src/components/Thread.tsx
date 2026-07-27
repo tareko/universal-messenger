@@ -38,6 +38,47 @@ export function Thread() {
     [person, chats]
   );
   const [showProfile, setShowProfile] = useState(false);
+  const [summary, setSummary] = useState<{ text: string; streaming: boolean } | null>(null);
+  const aiEnabled = useStore((s) => s.status?.ai?.enabled ?? false);
+
+  /** Stream an AI summary of the current chat into the panel. */
+  async function summarize() {
+    if (!selectedChat || summary?.streaming) return;
+    setSummary({ text: '', streaming: true });
+    try {
+      const res = await fetch('/api/ai/summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatId: selectedChat }),
+      });
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue;
+          try {
+            const payload = JSON.parse(line.slice(5).trim()) as { delta?: string; error?: string };
+            if (payload.error) throw new Error(payload.error);
+            if (payload.delta) {
+              setSummary((s) => (s ? { ...s, text: s.text + payload.delta } : s));
+            }
+          } catch (e) {
+            if (e instanceof Error && e.message !== 'Unexpected end of JSON input') throw e;
+          }
+        }
+      }
+      setSummary((s) => (s ? { ...s, streaming: false } : s));
+    } catch (e) {
+      setSummary({ text: `Summary failed: ${(e as Error).message}`, streaming: false });
+    }
+  }
   const messages = useStore((s) => s.messages);
   const messagesLoaded = useStore((s) => s.messagesLoaded);
   const unreadAtOpen = useStore((s) => s.unreadAtOpen);
@@ -333,8 +374,7 @@ export function Thread() {
           className="thread-header-name clickable"
           onClick={() => setShowProfile(true)}
           title="View profile"
-        >
-          <div className="thread-name" title={name || formatNumber(chat.remoteId)}>
+        >          <div className="thread-name" title={name || formatNumber(chat.remoteId)}>
             {chat.type === 'group' ? '👥 ' : chat.type === 'channel' ? '📢 ' : ''}
             {name || formatNumber(chat.remoteId)}
             {muted && (
@@ -367,7 +407,29 @@ export function Thread() {
             )}
           </div>
         </div>
+        {aiEnabled && (
+          <button
+            className="tool-btn"
+            title="Summarize this chat (AI)"
+            disabled={summary?.streaming}
+            onClick={() => void summarize()}
+          >
+            {summary?.streaming ? '…' : '✨'}
+          </button>
+        )}
       </div>
+
+      {summary && (
+        <div className="ai-summary">
+          <div className="ai-summary-head">
+            <span>✨ AI summary{summary.streaming ? ' (writing…)' : ''}</span>
+            <button className="attach-remove" onClick={() => setSummary(null)}>✕</button>
+          </div>
+          <div className="ai-summary-body" dir="auto">
+            {summary.text || '…'}
+          </div>
+        </div>
+      )}
 
       <div
         className="thread-scroll"
@@ -476,7 +538,20 @@ function Bubble({
   const [picker, setPicker] = useState(false);
   const [morePicker, setMorePicker] = useState(false);
   const [mediaRequested, setMediaRequested] = useState(false);
+  const [translation, setTranslation] = useState<{ text: string; loading: boolean } | null>(null);
+  const aiEnabled = useStore((s) => s.status?.ai?.enabled ?? false);
   const rowRef = useRef<HTMLDivElement>(null);
+
+  async function translate() {
+    if (translation?.loading) return;
+    setTranslation({ text: '', loading: true });
+    try {
+      const r = await api.aiTranslate(msg.body);
+      setTranslation({ text: r.translation, loading: false });
+    } catch (e) {
+      setTranslation({ text: `Translation failed: ${(e as Error).message}`, loading: false });
+    }
+  }
   // Highlight this row while it's the message being quoted in the composer.
   const isReplyTarget = useStore((s) => s.replyTo?.id === msg.id);
   const selectChat = useStore((s) => s.selectChat);
@@ -623,6 +698,16 @@ function Bubble({
                     👤
                   </button>
                 )}
+                {aiEnabled && msg.body && (
+                  <button
+                    className="action-btn"
+                    title="Translate"
+                    disabled={translation?.loading}
+                    onClick={() => void translate()}
+                  >
+                    {translation?.loading ? '…' : '🌐'}
+                  </button>
+                )}
                 {canForward && (
                   <button className="action-btn" title="Forward" onClick={onForward}>
                     ↪
@@ -705,6 +790,11 @@ function Bubble({
                 onMentionClick={onMentionClick}
               />
             </span>
+          )}
+          {translation && (
+            <div className="bubble-translation" dir="auto">
+              {translation.loading ? 'Translating…' : translation.text}
+            </div>
           )}
           {caption && !hasMedia && URL_RE.test(caption) && <LinkPreview messageId={msg.id} />}
           <span className="bubble-meta">

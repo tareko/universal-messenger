@@ -155,6 +155,10 @@ export const api = {
   typing: (chatId: string) => postJson('/typing', { chatId }),
   fetchMedia: (messageId: string) =>
     postJson<{ ok: boolean; pending: boolean }>('/media/fetch', { messageId }),
+  aiSuggest: (chatId: string) =>
+    postJson<{ suggestions: string[] }>('/ai/suggest', { chatId }),
+  aiTranslate: (text: string, targetLang?: string) =>
+    postJson<{ translation: string }>('/ai/translate', { text, targetLang }),
   linkPreview: (messageId: string) =>
     getJson<{ preview: LinkPreview | null }>(`/link-preview?msg=${encodeURIComponent(messageId)}`),
   whatsappCheck: (number: string) =>

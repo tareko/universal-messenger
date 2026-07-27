@@ -119,6 +119,7 @@ export interface AppStatus {
   carddav: string;
   webhook: { configured: boolean; publicUrl: string };
   accounts: Account[];
+  ai?: { enabled: boolean; model: string | null };
 }
 
 export type SseEvent =
