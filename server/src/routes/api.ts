@@ -766,17 +766,20 @@ api.get('/media/pdf-thumb/:file', async (req, res) => {
 /** React to a message (native where supported, fallback text over SMS). */
 api.post('/react', async (req, res) => {
   try {
-    const { chatId, messageId, emoji } = req.body as {
-      chatId: string;
+    const { messageId, emoji } = req.body as {
+      chatId?: string;
       messageId: string;
       emoji: string;
     };
-    if (!chatId || !messageId || !emoji) {
-      return res.status(400).json({ error: 'chatId, messageId, emoji required' });
+    if (!messageId || !emoji) {
+      return res.status(400).json({ error: 'messageId, emoji required' });
     }
-    const chat = getChat(chatId);
     const target = getMessage(messageId);
-    if (!chat || !target) return res.status(404).json({ error: 'not found' });
+    if (!target) return res.status(404).json({ error: 'message not found' });
+    // Route via the target message's own chat — works for person selections
+    // too (the passed chatId may be 'person:N' and not resolvable directly).
+    const chat = getChat(target.chatId);
+    if (!chat) return res.status(404).json({ error: 'chat not found' });
     const provider = providerForAccount(chat.accountId);
     if (!provider?.react) return res.status(400).json({ error: 'reactions not supported' });
 
