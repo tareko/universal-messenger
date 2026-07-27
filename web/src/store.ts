@@ -62,6 +62,8 @@ interface StoreState {
   replyPrivately: (msg: Message) => Promise<void>;
   setReplyTo: (msg: Message | null) => void;
   setDraft: (chatId: string, text: string) => void;
+  /** Effective chat id for actions (resolves person selections to a real chat). */
+  targetChatId: () => string | null;
   markRead: (chatId: string) => Promise<void>;
   setStatus: (s: AppStatus) => void;
   patchStatus: (p: { providers?: Record<string, string>; carddav?: string }) => void;

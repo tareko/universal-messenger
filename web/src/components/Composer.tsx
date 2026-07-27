@@ -363,11 +363,12 @@ export function Composer() {
   }
 
   async function fetchSuggestions() {
-    if (!selectedChat || suggesting) return;
+    const targetChat = useStore.getState().targetChatId();
+    if (!targetChat || suggesting) return;
     setSuggesting(true);
     setSuggestError(null);
     try {
-      const r = await api.aiSuggest(selectedChat);
+      const r = await api.aiSuggest(targetChat);
       setAiSuggestions(r.suggestions.length ? r.suggestions : null);
       if (!r.suggestions.length) setSuggestError('No suggestions came back');
     } catch (e) {
