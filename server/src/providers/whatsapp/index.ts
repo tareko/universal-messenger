@@ -84,6 +84,7 @@ export class WhatsAppProvider implements Provider {
   private qr: string | null = null;
   private accountId: string | null = null; // 'whatsapp:+<digits>' once linked
   private reconnectTimer: NodeJS.Timeout | null = null;
+  private reconnectAttempts = 0;
   private wasPaired = false;
 
   async start(): Promise<void> {
@@ -252,6 +253,7 @@ export class WhatsAppProvider implements Provider {
       this.state = 'open';
       this.qr = null;
       this.wasPaired = true;
+      this.reconnectAttempts = 0; // healthy connection resets backoff
       const me = this.sock?.user;
       const phone = me?.id?.split(':')[0];
       this.accountId = phone ? `whatsapp:+${phone}` : null;
@@ -277,13 +279,22 @@ export class WhatsAppProvider implements Provider {
         if (this.accountId) setAccountStatus(this.accountId, 'disconnected');
         this.accountId = null;
         this.wasPaired = false;
+        this.reconnectAttempts = 0;
         rmSync(sessionDir, { recursive: true, force: true });
         console.log('[whatsapp] logged out — session cleared');
       } else {
         this.state = 'close';
         // Reconnect only when previously paired (unpaired QR timeouts shouldn't loop).
         if (this.wasPaired || code !== DisconnectReason.timedOut) {
-          this.reconnectTimer = setTimeout(() => void this.connect(), 3000);
+          // Exponential backoff with jitter (3s → ~60s cap) so a conflict or
+          // rate-limit doesn't hot-loop the socket.
+          this.reconnectAttempts++;
+          const delay = Math.min(60_000, 3000 * 2 ** (this.reconnectAttempts - 1));
+          const jitter = Math.floor(Math.random() * 1000);
+          console.log(
+            `[whatsapp] connection closed (code ${code}) — reconnecting in ${Math.round((delay + jitter) / 1000)}s (attempt ${this.reconnectAttempts})`
+          );
+          this.reconnectTimer = setTimeout(() => void this.connect(), delay + jitter);
         }
       }
       broadcast({ type: 'accounts', data: listAccounts() });
