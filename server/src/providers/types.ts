@@ -95,6 +95,8 @@ export interface Provider {
   subscribePresence?(chat: Chat): Promise<void>;
   /** Group member list for @mention autocomplete (null = not a group/unsupported). */
   fetchParticipants?(chat: Chat): Promise<{ id: string; name: string }[] | null>;
+  /** Edit one of our own messages in place (where the service supports it). */
+  editMessage?(chat: Chat, target: Message, newBody: string): Promise<void>;
   /**
    * Inspect an inbound text body; return non-null if it's actually a reaction
    * (e.g. iMessage tapback fallback over SMS) rather than a normal message.

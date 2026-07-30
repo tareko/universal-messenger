@@ -90,6 +90,7 @@ export function Thread() {
   const reactMessage = useStore((s) => s.reactMessage);
   const replyPrivately = useStore((s) => s.replyPrivately);
   const setReplyTo = useStore((s) => s.setReplyTo);
+  const setEditing = useStore((s) => s.setEditing);
   const scrollNonce = useStore((s) => s.scrollNonce);
   const [forwarding, setForwarding] = useState<Message | null>(null);
   const [showJump, setShowJump] = useState(false);
@@ -467,6 +468,7 @@ export function Thread() {
                 canTranslate={Boolean(chat.translateEnabled)}
                 onReact={(emoji) => void reactMessage(m.id, emoji)}
                 onReply={() => setReplyTo(m)}
+                onEdit={() => setEditing(m)}
                 onReplyPrivately={() => void replyPrivately(m)}
                 onForward={() => setForwarding(m)}
                 onRetry={(msg) => void retryText(msg.id, msg.body)}
@@ -518,6 +520,7 @@ function Bubble({
   canTranslate,
   onReact,
   onReply,
+  onEdit,
   onReplyPrivately,
   onForward,
   onRetry,
@@ -532,6 +535,7 @@ function Bubble({
   canTranslate?: boolean;
   onReact: (emoji: string) => void;
   onReply: () => void;
+  onEdit: () => void;
   onReplyPrivately: () => void;
   onForward: () => void;
   onRetry: (msg: Message) => void;
@@ -609,6 +613,10 @@ function Bubble({
   const caption = msg.body;
   const incoming = msg.outgoing === 0;
   const canForward = Boolean(msg.body || msg.media?.length) && msg.status !== 'sending';
+  const canEdit = Boolean(
+    msg.outgoing === 1 && msg.body && !msg.media?.length && !msg.deleted &&
+    (provider === 'whatsapp' || provider === 'telegram' || provider === 'mattermost')
+  );
 
   // Delete-for-everyone tombstone.
   if (msg.deleted) {
@@ -699,6 +707,11 @@ function Bubble({
                 {isGroup && incoming && msg.sender && (
                   <button className="action-btn" title="Reply privately" onClick={onReplyPrivately}>
                     👤
+                  </button>
+                )}
+                {canEdit && (
+                  <button className="action-btn" title="Edit message" onClick={onEdit}>
+                    ✏️
                   </button>
                 )}
                 {aiEnabled && msg.body && canTranslate && (
@@ -952,9 +965,14 @@ function dedupeReactions(reactions: { emoji: string; from?: string }[]) {
 
 function formatNumber(d: string | null): string {
   if (!d) return '';
-  const digits = d.replace(/\D/g, '').slice(-10);
+  const digits = d.replace(/\D/g, '');
+  // NANP: (519) 555-0100. Others: international groups (+972 599 426 678).
   if (digits.length === 10) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
-  return d;
+  if (digits.length === 11 && digits.startsWith('1'))
+    return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
+  const cc = digits.slice(0, digits.length - 9);
+  const rest = digits.slice(digits.length - 9);
+  return `+${cc} ${rest.slice(0, 3)} ${rest.slice(3, 6)} ${rest.slice(6)}`;
 }
 
 /** Human label for a disappearing-messages duration. */

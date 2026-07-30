@@ -901,6 +901,18 @@ export class WhatsAppProvider implements Provider {
     }
   }
 
+  /** Edit our own message (WhatsApp edit-for-everyone, ~15 min window). */
+  async editMessage(chat: Chat, target: Message, newBody: string): Promise<void> {
+    if (!this.sock || this.state !== 'open') throw new Error('whatsapp not connected');
+    await this.sock.sendMessage(this.jidForChat(chat), {
+      text: newBody,
+      edit: this.reconstructKey(target),
+    });
+    updateMessageBody(target.id, newBody);
+    const updated = getMessage(target.id);
+    if (updated) broadcast({ type: 'message-updated', data: updated });
+  }
+
   /** Tell the chat we're typing (WhatsApp shows "typing…" to the other side). */
   async sendTyping(chat: Chat): Promise<void> {
     if (!this.sock || this.state !== 'open') return;

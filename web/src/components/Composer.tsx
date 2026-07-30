@@ -90,6 +90,9 @@ export function Composer() {
   const aiEnabled = useStore((s) => s.status?.ai?.enabled ?? false);
   const replyTo = useStore((s) => s.replyTo);
   const setReplyTo = useStore((s) => s.setReplyTo);
+  const editing = useStore((s) => s.editing);
+  const setEditing = useStore((s) => s.setEditing);
+  const submitEdit = useStore((s) => s.submitEdit);
   const sendMessage = useStore((s) => s.sendMessage);
   const sendMedia = useStore((s) => s.sendMedia);
   const [text, setText] = useState('');
@@ -183,6 +186,16 @@ export function Composer() {
   useEffect(() => {
     if (replyTo) taRef.current?.focus();
   }, [replyTo]);
+
+  // Entering edit mode: prefill the draft with the message body.
+  useEffect(() => {
+    if (editing) {
+      setText(editing.body);
+      taRef.current?.focus();
+    } else if (selectedChat) {
+      setText(useStore.getState().drafts[selectedChat] ?? '');
+    }
+  }, [editing, selectedChat]);
 
   // Persist the draft continuously (cheap) so it survives chat switches.
   useEffect(() => {
@@ -297,6 +310,12 @@ export function Composer() {
 
   async function submit() {
     if (!canSend) return;
+    if (editing) {
+      const body = trimmed;
+      setText('');
+      await submitEdit(body);
+      return;
+    }
     const body = trimmed;
     const forced = targetOverride ?? undefined;
     const picked = mentions.filter((m) => body.includes(`@${m.name}`));
@@ -453,6 +472,18 @@ export function Composer() {
       </div>
 
       <div className="composer-input-col">
+        {editing && (
+          <div className="reply-preview">
+            <div className="reply-preview-bar" />
+            <div className="reply-preview-body">
+              <span className="reply-preview-author">Editing message</span>
+              <span className="reply-preview-text">{editing.body}</span>
+            </div>
+            <button className="attach-remove" title="Cancel edit" onClick={() => setEditing(null)}>
+              ✕
+            </button>
+          </div>
+        )}
         {aiSuggestions && (
           <div className="ai-suggestions">
             <div className="ai-suggestions-head">
@@ -573,6 +604,7 @@ export function Composer() {
             onClick={() => void submit()}
           >
             Send
+            {editing ? ' (save)' : ''}
             {targetOverride && (
               <span className="provider-badge send-target-badge">
                 {providerBadge(

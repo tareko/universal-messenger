@@ -19,6 +19,7 @@ interface StoreState {
   selectedChat: string | null; // chat id, or 'person:<id>' for a linked person
   messages: Message[];
   replyTo: Message | null; // message being quoted in the composer
+  editing: Message | null; // message being edited in the composer
   /** Unsent composer text retained per chat. */
   drafts: Record<string, string>;
   hasOlder: boolean; // more history available (DB or provider-side)
@@ -61,6 +62,8 @@ interface StoreState {
   forwardMessage: (messageId: string, targetChatId: string) => Promise<void>;
   replyPrivately: (msg: Message) => Promise<void>;
   setReplyTo: (msg: Message | null) => void;
+  setEditing: (msg: Message | null) => void;
+  submitEdit: (text: string) => Promise<void>;
   setDraft: (chatId: string, text: string) => void;
   /** Effective chat id for actions (resolves person selections to a real chat). */
   targetChatId: () => string | null;
@@ -86,6 +89,7 @@ export const useStore = create<StoreState>((set, get) => ({
   selectedChat: null,
   messages: [],
   replyTo: null,
+  editing: null,
   drafts: {},
   hasOlder: true,
   loadingOlder: false,
@@ -130,6 +134,7 @@ export const useStore = create<StoreState>((set, get) => ({
     set({
       selectedChat: chatId,
       replyTo: null,
+      editing: null,
       hasOlder: true,
       // Keep failed/in-flight bubbles for this chat so they survive switching.
       messages: get().messages.filter(
@@ -459,6 +464,19 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   setReplyTo: (msg) => set({ replyTo: msg }),
+
+  setEditing: (msg) => set({ editing: msg }),
+
+  submitEdit: async (text: string) => {
+    const { editing } = get();
+    if (!editing || !text.trim()) return;
+    try {
+      await api.editMessage(editing.id, text.trim());
+      set({ editing: null });
+    } catch (e) {
+      set({ error: (e as Error).message });
+    }
+  },
 
   setDraft: (chatId, text) =>
     set((s) => ({ drafts: text ? { ...s.drafts, [chatId]: text } : Object.fromEntries(Object.entries(s.drafts).filter(([k]) => k !== chatId)) })),

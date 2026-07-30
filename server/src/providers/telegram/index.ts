@@ -648,6 +648,19 @@ export class TelegramProvider implements Provider {
     return { id: fwd ? `${targetChat.remoteId}:${fwd.id}` : '' };
   }
 
+  /** Edit our own message in place. */
+  async editMessage(chat: Chat, target: Message, newBody: string): Promise<void> {
+    if (!this.client || this.state !== 'open' || !this.accountId) {
+      throw new Error('telegram not connected');
+    }
+    const peer = await this.peerFor(chat.remoteId);
+    const msgId = TelegramProvider.msgIdOf(target.id.slice(`${this.accountId}:`.length));
+    await this.client.invoke(new Api.messages.EditMessage({ peer, id: msgId, message: newBody }));
+    updateMessageBody(target.id, newBody);
+    const updated = getMessage(target.id);
+    if (updated) broadcast({ type: 'message-updated', data: updated });
+  }
+
   /** Tell the chat we're typing. */
   async sendTyping(chat: Chat): Promise<void> {
     if (!this.client || this.state !== 'open') return;

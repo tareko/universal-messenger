@@ -30,7 +30,7 @@ interface SignalEnvelope {
   /** Device-sync echo of messages sent from the phone / other linked devices. */
   syncMessage?: { sentMessage?: SignalDataMessage & { destination?: string; destinationNumber?: string } };
   typingMessage?: { action?: string; timestamp?: number };
-  receiptMessage?: { type?: string; timestamps?: number[] };
+  receiptMessage?: { type?: string; isDelivery?: boolean; isRead?: boolean; timestamps?: number[] };
 }
 interface SignalDataMessage {
   timestamp: number;
@@ -220,9 +220,15 @@ export class SignalProvider implements Provider {
         }
         return;
       }
-      // Read/delivery receipts for our outgoing messages.
+      // Read/delivery receipts for our outgoing messages. signal-cli reports
+      // isRead/isDelivery booleans (type is unreliable/absent).
       if (env.receiptMessage?.timestamps?.length) {
-        const status = env.receiptMessage.type === 'READ' ? 'read' : 'delivered';
+        const status = env.receiptMessage.isRead
+          ? 'read'
+          : env.receiptMessage.isDelivery
+            ? 'delivered'
+            : null;
+        if (!status) return;
         const source = env.sourceNumber ?? env.source ?? '';
         for (const ts of env.receiptMessage.timestamps) {
           const id = `${this.accountId}:${source}:${ts}`;

@@ -10,4 +10,3 @@ TODO:
 8. When I send a signal message, I get a single checkmark with "sent to signal server" even though the signal client shows it was received by the recipient (e.g., 2 grey checkmarks)
 9. I don't see attachments sent from mattermost
 10. When I paste a photo into a mattermost message, it should not appear as an attachment, but as a picture. These seem to be two different attachment/media types.
-

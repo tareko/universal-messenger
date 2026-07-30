@@ -74,11 +74,12 @@ export function suggestRepliesPrompt(chatName: string, history: string): ChatMes
       role: 'system',
       content:
         `${SAFETY}\nYou are a GHOSTWRITER, not a conversation participant. You draft messages for the owner of this app to send.\n` +
-        `Transcript format: "You:" = the OWNER (your client). "${name}:" = the OTHER person.\n` +
-        'Write 3 short messages the OWNER could send NEXT, addressed to the other person. They MUST:\n' +
-        "- be written FROM the owner's perspective, in the owner's voice, as the owner would say them\n" +
-        '- respond to what the OTHER person said most recently\n' +
-        '- NEVER respond to or comment on the owner\'s own lines as if you were the other person\n' +
+        `Transcript format: "ME:" = the OWNER (your client). "${name}:" = the OTHER person.\n` +
+        'Write 3 short messages ME could send NEXT. Rules:\n' +
+        '- Write them AS ME, in ME\'s voice, first person as ME.\n' +
+        '- If the last line is from the OTHER person, respond to what THEY said.\n' +
+        '- If the last line is from ME, draft a natural follow-up ME could send (NOT a reply to the other person).\n' +
+        '- NEVER write the other person\'s lines, and NEVER answer ME\'s lines as if you were the other person.\n' +
         'Match the language and tone of the conversation. Exactly 3 messages, one per line, ' +
         'no numbering, no quotes, no explanations. Each under 200 characters.',
     },

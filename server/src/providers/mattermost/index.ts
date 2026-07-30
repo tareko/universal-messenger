@@ -463,13 +463,31 @@ export class MattermostProvider implements Provider {
     const display =
       isDm && channel ? ((await this.dmDisplayName(channel)) ?? channel.display_name) : channel?.display_name;
 
-    // Media: download image attachments.
+    // Media: WS 'posted' events usually lack metadata.files — fall back to
+    // file_ids + /files/<id>/info. Downloads all attachments (images inline,
+    // other files as downloadable chips).
     let media;
-    const files = post.metadata?.files ?? [];
+    let files: { id: string; mime_type?: string; name?: string }[] = post.metadata?.files ?? [];
+    if (!files.length && post.file_ids?.length) {
+      files = (
+        await Promise.all(
+          post.file_ids.map(async (id) => {
+            try {
+              const info = await this.rest<{ mime_type?: string; name?: string }>(
+                'GET',
+                `/files/${id}/info`
+              );
+              return { id, mime_type: info.mime_type, name: info.name };
+            } catch {
+              return { id };
+            }
+          })
+        )
+      ).filter(Boolean);
+    }
     if (opts.downloadMedia && files.length) {
       const refs = [];
       for (const f of files) {
-        if (!f.mime_type?.startsWith('image/')) continue;
         try {
           const res = await fetch(`${this.base}/files/${f.id}`, {
             signal: AbortSignal.timeout(30000),
@@ -477,7 +495,7 @@ export class MattermostProvider implements Provider {
           });
           if (!res.ok) continue;
           const buf = Buffer.from(await res.arrayBuffer());
-          refs.push(saveMediaBuffer(buf, f.mime_type, post.id + f.id));
+          refs.push(saveMediaBuffer(buf, f.mime_type ?? 'application/octet-stream', post.id + f.id));
         } catch {
           /* skip failed downloads */
         }
@@ -612,6 +630,16 @@ export class MattermostProvider implements Provider {
     }
   }
 
+  /** Edit our own post (Mattermost PATCH). */
+  async editMessage(_chat: Chat, target: Message, newBody: string): Promise<void> {
+    if (this.state !== 'open' || !this.accountId) throw new Error('mattermost not connected');
+    const postId = target.id.slice(`${this.accountId}:`.length);
+    await this.rest('PUT', `/posts/${postId}/patch`, { message: newBody });
+    updateMessageBody(target.id, newBody);
+    const updated = getMessage(target.id);
+    if (updated) broadcast({ type: 'message-updated', data: updated });
+  }
+
   /** Find-or-create a DM channel with a user (by username) for reply-privately. */
   async createDmChannel(username: string): Promise<string> {
     if (!this.me) throw new Error('mattermost not connected');
@@ -672,7 +700,13 @@ export class MattermostProvider implements Provider {
       const form = new FormData();
       form.set('channel_id', chat.remoteId);
       form.set('client_ids', `um-${Date.now()}`);
-      form.append('files', new Blob([Buffer.from(m.data, 'base64')], { type: m.contentType }), 'image');
+      // Extension matters: Mattermost renders images inline only when the
+      // filename/mime makes the type clear ('image' alone shows a file card).
+      const ext =
+        { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp' }[
+          m.contentType
+        ] ?? 'jpg';
+      form.append('files', new Blob([Buffer.from(m.data, 'base64')], { type: m.contentType }), `photo.${ext}`);
       const res = await fetch(`${this.base}/files`, {
         method: 'POST',
         signal: AbortSignal.timeout(30000),

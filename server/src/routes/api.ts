@@ -52,8 +52,7 @@ import { SignalProvider } from '../providers/signal/index.js';
 import { syncContacts, getCarddavStatus } from '../contacts/carddav.js';
 import { aiEnabled } from '../ai/actions.js';
 import { config as appConfig } from '../config.js';
-import { getNotifySettings, saveNotifySettings, type NotifySettings } from '../notify/settings.js';
-import { broadcast } from '../realtime/sse.js';
+import { getNotifySettings, saveNotifySettings, type NotifySettings } from '../notify/settings.js';import { broadcast } from '../realtime/sse.js';
 import { getMediaPath, mediaContentType, saveUploadedMedia, loadMediaBuffer } from '../services/media.js';
 import { backfillReactions } from '../services/backfill.js';
 import { normalizeTel } from '../contacts/match.js';
@@ -433,18 +432,27 @@ api.post('/chats/suggest', (req, res) => {
 
 /**
  * Hide/unhide a conversation. Also accepts 'person:N' — hides (or restores)
- * ALL of that person's linked chats at once.
+ * ALL of that person's linked chats at once. Hiding also mutes.
  */
 api.post('/chats/hide', (req, res) => {
   const { chatId, hidden } = req.body as { chatId: string; hidden: boolean };
   if (!chatId) return res.status(400).json({ error: 'chatId required' });
+  const keys: string[] = [];
   if (chatId.startsWith('person:')) {
     const person = getPeople().find((p) => p.id === Number(chatId.slice(7)));
     if (!person) return res.status(404).json({ error: 'person not found' });
     setChatsHidden(person.chatIds, Boolean(hidden));
+    keys.push(...person.chatIds, chatId);
   } else {
     setChatHidden(chatId, Boolean(hidden));
+    keys.push(chatId);
   }
+  // Hiding also mutes (unhide unmutes).
+  const settings = getNotifySettings();
+  const mutedChats = hidden
+    ? [...new Set([...settings.mutedChats, ...keys])]
+    : settings.mutedChats.filter((c) => !keys.includes(c));
+  saveNotifySettings({ ...settings, mutedChats });
   broadcast({ type: 'chats-updated' });
   res.json({ ok: true });
 });
@@ -724,6 +732,28 @@ api.post('/media/fetch', (req, res) => {
     console.error('[api] media fetch failed:', (e as Error).message)
   );
   res.json({ ok: true, pending: true });
+});
+
+/** Edit one of our own messages in place (where the service supports it). */
+api.post('/edit', async (req, res) => {
+  try {
+    const { messageId, text } = req.body as { messageId: string; text: string };
+    if (!messageId || !text?.trim()) return res.status(400).json({ error: 'messageId, text required' });
+    const target = getMessage(messageId);
+    if (!target) return res.status(404).json({ error: 'message not found' });
+    if (target.outgoing !== 1) return res.status(400).json({ error: 'can only edit own messages' });
+    const chat = getChat(target.chatId);
+    if (!chat) return res.status(404).json({ error: 'chat not found' });
+    const provider = providerForAccount(chat.accountId);
+    if (!provider?.editMessage) {
+      return res.status(400).json({ error: 'editing not supported on this service' });
+    }
+    await provider.editMessage(chat, target, text.trim());
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[api] edit failed:', (err as Error).message);
+    res.status(500).json({ error: (err as Error).message });
+  }
 });
 
 /** Serve a cached media attachment. */

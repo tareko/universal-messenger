@@ -17,7 +17,7 @@ const SUMMARY_BUDGET = 48_000; // chars of history (~13k tokens)
 export async function suggestReplies(chat: Chat): Promise<string[]> {
   const messages = getMessages(chat.id, 40);
   const chatName = chat.name ?? chat.title ?? 'them';
-  const lines = historyWithinBudget(toHistoryLines(messages, 'You', chatName), SUGGEST_BUDGET);
+  const lines = historyWithinBudget(toHistoryLines(messages, 'ME', chatName), SUGGEST_BUDGET);
   if (!lines.length) return [];
   const raw = await aiChat(suggestRepliesPrompt(chatName, formatHistory(lines)), {
     maxTokens: 300,

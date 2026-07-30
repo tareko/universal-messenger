@@ -145,6 +145,8 @@ export const api = {
   },
   react: (chatId: string, messageId: string, emoji: string) =>
     postJson<{ ok: boolean }>('/react', { chatId, messageId, emoji }),
+  editMessage: (messageId: string, text: string) =>
+    postJson<{ ok: boolean }>('/edit', { messageId, text }),
   forward: (messageId: string, targetChatId: string) =>
     postJson<{ ok: boolean; id: string }>('/forward', { messageId, targetChatId }),
   markRead: (chatId: string) => postJson('/markread', { chatId }),
