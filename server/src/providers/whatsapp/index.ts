@@ -672,16 +672,17 @@ export class WhatsAppProvider implements Provider {
         const isGroup = key.remoteJid.endsWith('@g.us');
         const chatRemoteId = isGroup ? key.remoteJid : await this.phoneFromJid(key.remoteJid);
         const chatId = `${this.accountId}:${chatRemoteId}`;
-        // key.fromMe describes the TARGET message's author, not the reactor.
-        // In groups, reactions on OUR messages come from OTHER people; on
-        // their messages it may be them (or us from another device).
-        const reactor = isGroup
-          ? key.fromMe
-            ? 'others'
-            : 'me'
-          : key.fromMe
-            ? 'me'
-            : (await this.phoneFromJid(key.participant ?? '')) || chatRemoteId;
+        // key.fromMe describes the TARGET message's author. The REACTOR is in
+        // reaction.key (the outer message's key): fromMe = us, participant =
+        // the reacting group member.
+        const outer = (reaction as { key?: WAMessageKey }).key;
+        const reactor = outer?.fromMe
+          ? 'me'
+          : outer?.participant
+            ? (await this.phoneFromJid(outer.participant)) || 'others'
+            : isGroup
+              ? 'others'
+              : chatRemoteId;
         const ts = Number(reaction.senderTimestampMs ?? Date.now());
 
         if (emoji) {
