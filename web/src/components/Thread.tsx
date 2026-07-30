@@ -613,9 +613,21 @@ function Bubble({
   const caption = msg.body;
   const incoming = msg.outgoing === 0;
   const canForward = Boolean(msg.body || msg.media?.length) && msg.status !== 'sending';
+  // Edit windows per service (WhatsApp ~15 min, Telegram ~48h, Mattermost none).
+  const EDIT_WINDOW_MS: Record<string, number> = {
+    whatsapp: 15 * 60_000,
+    telegram: 48 * 3600_000,
+  };
+  const editWindow = EDIT_WINDOW_MS[provider];
+  const editableProvider =
+    provider === 'whatsapp' || provider === 'telegram' || provider === 'mattermost';
   const canEdit = Boolean(
-    msg.outgoing === 1 && msg.body && !msg.media?.length && !msg.deleted &&
-    (provider === 'whatsapp' || provider === 'telegram' || provider === 'mattermost')
+    msg.outgoing === 1 &&
+      msg.body &&
+      !msg.media?.length &&
+      !msg.deleted &&
+      editableProvider &&
+      (editWindow === undefined || Date.now() - msg.ts < editWindow)
   );
 
   // Delete-for-everyone tombstone.
