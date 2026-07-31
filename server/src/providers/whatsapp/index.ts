@@ -23,6 +23,8 @@ import {
   addReceiptReader,
   countReceiptReaders,
   getDb,
+  getKv,
+  setKv,
   getMessage,
   getMessages,
   getName,
