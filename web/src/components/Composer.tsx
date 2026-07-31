@@ -102,7 +102,7 @@ export function Composer() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [token, setToken] = useState<EmojiToken | null>(null);
   const [selIdx, setSelIdx] = useState(0);
-  const [aiSuggestions, setAiSuggestions] = useState<string[] | null>(null);
+  const [aiSuggestions, setAiSuggestions] = useState<{ chatId: string; items: string[] } | null>(null);
   const [suggesting, setSuggesting] = useState(false);
   const [suggestError, setSuggestError] = useState<string | null>(null);
   // @mention autocomplete state
@@ -392,7 +392,9 @@ export function Composer() {
     setSuggestError(null);
     try {
       const r = await api.aiSuggest(targetChat);
-      setAiSuggestions(r.suggestions.length ? r.suggestions : null);
+      // Tag suggestions to the chat they were requested for — if the user
+      // has since switched chats, they show THERE, not here.
+      setAiSuggestions(r.suggestions.length ? { chatId: targetChat, items: r.suggestions } : null);
       if (!r.suggestions.length) setSuggestError('No suggestions came back');
     } catch (e) {
       setAiSuggestions(null);
@@ -484,13 +486,13 @@ export function Composer() {
             </button>
           </div>
         )}
-        {aiSuggestions && (
+        {aiSuggestions && aiSuggestions.chatId === selectedChat && (
           <div className="ai-suggestions">
             <div className="ai-suggestions-head">
               <span>✨ AI suggestions</span>
               <button className="attach-remove" onClick={() => setAiSuggestions(null)}>✕</button>
             </div>
-            {aiSuggestions.map((sug, i) => (
+            {aiSuggestions.items.map((sug, i) => (
               <button key={i} className="ai-suggestion" onClick={() => applySuggestion(sug)} dir="auto">
                 {sug}
               </button>
