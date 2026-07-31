@@ -267,9 +267,16 @@ export class WhatsAppProvider implements Provider {
       }
       broadcast({ type: 'accounts', data: listAccounts() });
       console.log(`[whatsapp] connected as ${me?.name ?? phone}`);
-      void this.syncGroups();
-      void this.mergeLidChats();
-      void this.syncChannelTitles();
+      // Heavy sweeps (group metadata, lid merge, channel titles) run at most
+      // every 6h — NOT on every reconnect. Message resync is incremental via
+      // Baileys' app-state sync and doesn't need these.
+      const lastSweep = Number(getKv('whatsapp:last_sweep') ?? '0');
+      if (Date.now() - lastSweep > 6 * 3600_000) {
+        setKv('whatsapp:last_sweep', String(Date.now()));
+        void this.syncGroups();
+        void this.mergeLidChats();
+        void this.syncChannelTitles();
+      }
     }
     if (u.connection === 'close') {
       this.sock = null;
