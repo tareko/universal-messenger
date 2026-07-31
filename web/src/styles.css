@@ -856,3 +856,5 @@ body {
 }
 .tool-btn.spin { animation: spin 0.9s linear infinite; }
 .tool-btn.error { color: var(--danger); }
+
+.ai-suggestions-actions { display: flex; gap: 4px; }

@@ -132,15 +132,25 @@ export function Composer() {
     setAiSuggestions(null);
     // Restore this chat's draft (empty box for chats without one).
     setText(selectedChat ? (useStore.getState().drafts[selectedChat] ?? '') : '');
-    // Auto-suggest replies for chats opted in via the profile.
+    // Auto-suggest replies for opted-in chats — from cache unless the
+    // conversation has moved on (only regenerate for new messages).
     if (chat?.suggestEnabled && aiEnabled && selectedChat) {
-      void fetchSuggestions();
+      void fetchSuggestions(false);
     }
     // Load group participants for @mention autocomplete.
     if (chat?.type === 'group') {
       void api.participants(chat.id).then(setParticipants).catch(() => setParticipants([]));
     }
   }, [selectedChat, chat?.id, chat?.type]);
+
+  // Regenerate when a NEW incoming message lands in an opted-in open chat
+  // (throttled — cache freshness handles the "unless new message" rule).
+  const lastMsgTs = useStore((s) => s.messages.at(-1)?.ts ?? 0);
+  useEffect(() => {
+    if (!chat?.suggestEnabled || !aiEnabled || !selectedChat || !lastMsgTs) return;
+    const cached = useStore.getState().suggestionCache[useStore.getState().targetChatId() ?? ''];
+    if (cached && lastMsgTs > cached.lastTs) void fetchSuggestions(true);
+  }, [lastMsgTs, chat?.suggestEnabled, aiEnabled, selectedChat]);
 
   const mentionCandidates = useMemo<MentionCandidate[]>(() => {
     if (!mentionToken) return [];
@@ -385,17 +395,26 @@ export function Composer() {
     }
   }
 
-  async function fetchSuggestions() {
+  async function fetchSuggestions(force = false) {
     const targetChat = useStore.getState().targetChatId();
     if (!targetChat || suggesting) return;
+    const latestTs = useStore.getState().messages.at(-1)?.ts ?? 0;
+    // Serve from cache unless forced or newer messages have arrived.
+    const cached = useStore.getState().suggestionCache[targetChat];
+    if (!force && cached && cached.lastTs >= latestTs) {
+      setAiSuggestions({ chatId: targetChat, items: cached.items });
+      return;
+    }
     setSuggesting(true);
     setSuggestError(null);
     try {
       const r = await api.aiSuggest(targetChat);
+      const items = r.suggestions;
+      useStore.getState().setSuggestionCache(targetChat, latestTs, items);
       // Tag suggestions to the chat they were requested for — if the user
       // has since switched chats, they show THERE, not here.
-      setAiSuggestions(r.suggestions.length ? { chatId: targetChat, items: r.suggestions } : null);
-      if (!r.suggestions.length) setSuggestError('No suggestions came back');
+      setAiSuggestions(items.length ? { chatId: targetChat, items } : null);
+      if (!items.length) setSuggestError('No suggestions came back');
     } catch (e) {
       setAiSuggestions(null);
       setSuggestError((e as Error).message);
@@ -490,7 +509,17 @@ export function Composer() {
           <div className="ai-suggestions">
             <div className="ai-suggestions-head">
               <span>✨ AI suggestions</span>
-              <button className="attach-remove" onClick={() => setAiSuggestions(null)}>✕</button>
+              <span className="ai-suggestions-actions">
+                <button
+                  className="attach-remove"
+                  title="Regenerate suggestions"
+                  disabled={suggesting}
+                  onClick={() => void fetchSuggestions(true)}
+                >
+                  ↻
+                </button>
+                <button className="attach-remove" title="Dismiss" onClick={() => setAiSuggestions(null)}>✕</button>
+              </span>
             </div>
             {aiSuggestions.items.map((sug, i) => (
               <button key={i} className="ai-suggestion" onClick={() => applySuggestion(sug)} dir="auto">

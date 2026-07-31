@@ -22,6 +22,8 @@ interface StoreState {
   editing: Message | null; // message being edited in the composer
   /** Unsent composer text retained per chat. */
   drafts: Record<string, string>;
+  /** AI suggestion cache per chat, keyed to the latest message ts at fetch time. */
+  suggestionCache: Record<string, { lastTs: number; items: string[] }>;
   hasOlder: boolean; // more history available (DB or provider-side)
   loadingOlder: boolean;
   unreadAtOpen: number; // unread count captured when the chat was opened
@@ -65,6 +67,7 @@ interface StoreState {
   setEditing: (msg: Message | null) => void;
   submitEdit: (text: string) => Promise<void>;
   setDraft: (chatId: string, text: string) => void;
+  setSuggestionCache: (chatId: string, lastTs: number, items: string[]) => void;
   /** Effective chat id for actions (resolves person selections to a real chat). */
   targetChatId: () => string | null;
   markRead: (chatId: string) => Promise<void>;
@@ -91,6 +94,7 @@ export const useStore = create<StoreState>((set, get) => ({
   replyTo: null,
   editing: null,
   drafts: {},
+  suggestionCache: {},
   hasOlder: true,
   loadingOlder: false,
   unreadAtOpen: 0,
@@ -480,6 +484,9 @@ export const useStore = create<StoreState>((set, get) => ({
 
   setDraft: (chatId, text) =>
     set((s) => ({ drafts: text ? { ...s.drafts, [chatId]: text } : Object.fromEntries(Object.entries(s.drafts).filter(([k]) => k !== chatId)) })),
+
+  setSuggestionCache: (chatId, lastTs, items) =>
+    set((s) => ({ suggestionCache: { ...s.suggestionCache, [chatId]: { lastTs, items } } })),
 
   markRead: async (chatId: string) => {
     const ids = isPersonSelection(chatId) ? memberChatIds(get()) : [chatId];
