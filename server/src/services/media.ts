@@ -55,10 +55,12 @@ export function loadMediaBuffer(ref: MediaRef): { data: string; contentType: str
   }
 }
 
-/** Save a profile avatar and return its local ref (stable filename per key). */
+/** Save a profile avatar and return its local ref (content-hashed filename). */
 export function saveAvatar(key: string, buf: Buffer, contentType: string): MediaRef {
   const ct = (contentType || 'image/jpeg').split(';')[0].trim();
-  const hash = createHash('sha1').update(key).digest('hex').slice(0, 20);
+  // Content hash in the filename: replacing a photo yields a NEW url, so
+  // browsers never serve a stale cached image.
+  const hash = createHash('sha1').update(key).update(buf).digest('hex').slice(0, 20);
   const file = `${hash}.${extFor(ct)}`;
   writeFileSync(resolve(avatarDir, file), buf);
   return { url: `/api/media/avatars/${file}`, contentType: ct };

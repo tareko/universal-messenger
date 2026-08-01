@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { useStore } from '../store';
-import { Avatar } from './Avatar';
+import { Avatar, primeAvatarCache } from './Avatar';
 import { providerBadge } from './AccountSwitcher';
 import { formatTime } from './Thread';
 import type { Chat, Person, Tag } from '../types';
@@ -61,6 +61,7 @@ export function ProfilePanel({
   const [avatars, setAvatars] = useState<{ chatId: string; provider: string; url: string | null }[]>([]);
   const [picked, setPicked] = useState(false);
   const [pickError, setPickError] = useState('');
+  const [importing, setImporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const sourceChats = person ? memberChats : [chat];
@@ -68,6 +69,23 @@ export function ProfilePanel({
   useEffect(() => {
     void api.tags().then(setTaxonomy).catch(() => {});
   }, []);
+
+  /** Refresh the displayed photo after pick/upload and bust the stale cache. */
+  async function refreshDisplayedPhoto() {
+    try {
+      const r = await api.avatar(chat.id);
+      if (r.url) {
+        primeAvatarCache(chat.id, r.url);
+        // Show the new photo in the row too.
+        setAvatars((prev) => {
+          const rest = prev.filter((a) => a.chatId !== chat.id);
+          return [...rest, { chatId: chat.id, provider: chat.provider, url: r.url }];
+        });
+      }
+    } catch {
+      /* keep old */
+    }
+  }
 
   // Load avatar options from each source chat (one per service for linked people).
   useEffect(() => {
@@ -137,28 +155,33 @@ export function ProfilePanel({
   async function pick(chatId: string, avatarChatId?: string) {
     setPickError('');
     setPicked(false);
-    await run(async () => {
-      try {
-        await api.pickAvatar(chatId, avatarChatId);
-        setPicked(true);
-      } catch (e) {
-        setPickError((e as Error).message);
-      }
-    });
+    setImporting(true);
+    try {
+      await api.pickAvatar(chatId, avatarChatId);
+      setPicked(true);
+      await refreshDisplayedPhoto();
+      await refreshChats();
+    } catch (e) {
+      setPickError((e as Error).message);
+    } finally {
+      setImporting(false);
+    }
   }
 
   async function uploadPhoto(blob: Blob, _contentType: string) {
     setPickError('');
     setPicked(false);
-    await run(async () => {
-      try {
-        await api.uploadAvatar(chat.id, blob);
-        setPicked(true);
-        await refreshChats();
-      } catch (e) {
-        setPickError((e as Error).message);
-      }
-    });
+    setImporting(true);
+    try {
+      await api.uploadAvatar(chat.id, blob);
+      setPicked(true);
+      await refreshDisplayedPhoto();
+      await refreshChats();
+    } catch (e) {
+      setPickError((e as Error).message);
+    } finally {
+      setImporting(false);
+    }
   }
 
   async function onPickPhotoFile(file: File | undefined) {
@@ -273,9 +296,11 @@ export function ProfilePanel({
               />
             </div>
             <p className="profile-hint">
-              Click a photo to use it, or ＋ to upload/paste your own.
+              {importing
+                ? 'Importing…'
+                : 'Click a photo to use it, or ＋ to upload/paste your own.'}
             </p>
-            {picked && <div className="profile-avatar-picked">✓ Saved to the contact card</div>}
+            {picked && !importing && <div className="profile-avatar-picked">✓ Saved to the contact card</div>}
             {pickError && <div className="attach-error">{pickError}</div>}
           </div>
         )}

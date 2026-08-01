@@ -3,6 +3,11 @@ import { api } from '../api';
 
 const cache = new Map<string, string | null>();
 
+/** Prime the avatar cache with a fresh URL (after pick/upload). */
+export function primeAvatarCache(chatId: string, url: string): void {
+  cache.set(chatId, url);
+}
+
 function useAvatarUrl(chatId?: string): string | null {
   const [url, setUrl] = useState<string | null>(chatId ? (cache.get(chatId) ?? null) : null);
   useEffect(() => {

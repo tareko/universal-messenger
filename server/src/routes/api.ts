@@ -843,6 +843,10 @@ api.post('/avatar/pick', async (req, res) => {
 
     const ok = await updateContactPhoto(tel, avatar.data, avatar.contentType);
     if (!ok) return res.status(502).json({ error: 'failed to write photo to the contact card' });
+    // Picking a photo also updates the in-app avatar so it shows immediately.
+    const ref = saveAvatar(chatId, avatar.data, avatar.contentType);
+    setKv(`avatar:${chatId}`, JSON.stringify({ url: ref.url, ts: Date.now() }));
+    broadcast({ type: 'chats-updated' });
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
