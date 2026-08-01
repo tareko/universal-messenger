@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
+import { useStore } from '../store';
 
 const cache = new Map<string, string | null>();
 
 /** Prime the avatar cache with a fresh URL (after pick/upload). */
 export function primeAvatarCache(chatId: string, url: string): void {
   cache.set(chatId, url);
+  useStore.getState().bumpAvatarVersion();
 }
 
 function useAvatarUrl(chatId?: string): string | null {
   const [url, setUrl] = useState<string | null>(chatId ? (cache.get(chatId) ?? null) : null);
+  const avatarVersion = useStore((s) => s.avatarVersion);
   useEffect(() => {
     // Sync with the current chatId (rows get reused in reordered lists).
     setUrl(chatId ? (cache.get(chatId) ?? null) : null);
@@ -34,7 +37,7 @@ function useAvatarUrl(chatId?: string): string | null {
     return () => {
       active = false;
     };
-  }, [chatId]);
+  }, [chatId, avatarVersion]);
   return url;
 }
 

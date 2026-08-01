@@ -26,6 +26,8 @@ interface StoreState {
   suggestionCache: Record<string, { lastTs: number; items: string[] }>;
   /** Persistent per-chat avatar upload failure (visible until next success). */
   avatarErrors: Record<string, string>;
+  /** Bumped whenever an avatar is primed — tells mounted Avatars to refresh. */
+  avatarVersion: number;
   hasOlder: boolean; // more history available (DB or provider-side)
   loadingOlder: boolean;
   unreadAtOpen: number; // unread count captured when the chat was opened
@@ -71,6 +73,7 @@ interface StoreState {
   setDraft: (chatId: string, text: string) => void;
   setSuggestionCache: (chatId: string, lastTs: number, items: string[]) => void;
   setAvatarError: (chatId: string, error: string | null) => void;
+  bumpAvatarVersion: () => void;
   /** Effective chat id for actions (resolves person selections to a real chat). */
   targetChatId: () => string | null;
   markRead: (chatId: string) => Promise<void>;
@@ -99,6 +102,7 @@ export const useStore = create<StoreState>((set, get) => ({
   drafts: {},
   suggestionCache: {},
   avatarErrors: {},
+  avatarVersion: 0,
   hasOlder: true,
   loadingOlder: false,
   unreadAtOpen: 0,
@@ -523,6 +527,7 @@ export const useStore = create<StoreState>((set, get) => ({
   patchStatus: (p) => set((s) => (s.status ? { ...s, status: { ...s.status, ...p } } : s)),
   setAccounts: (a) => set({ accounts: a }),
   setPendingJump: (id) => set({ pendingJump: id }),
+  bumpAvatarVersion: () => set((s) => ({ avatarVersion: s.avatarVersion + 1 })),
   targetChatId: () => {
     if (!get().selectedChat) return null;
     return resolveTargetChat(get());
