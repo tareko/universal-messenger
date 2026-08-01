@@ -370,7 +370,11 @@ export function Thread() {
         >
           ←
         </button>
-        <Avatar name={name || chat.remoteId} size={36} chatId={person ? undefined : chat.id} />
+        <Avatar
+          name={name || chat.remoteId}
+          size={36}
+          chatId={person ? (person.defaultChatId ?? person.chatIds[0] ?? undefined) : chat.id}
+        />
         <div
           className="thread-header-name clickable"
           onClick={() => setShowProfile(true)}

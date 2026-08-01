@@ -372,6 +372,14 @@ function previewText(
   return '';
 }
 
+/** Which chat's avatar to show: person rows use the default member chat. */
+function avatarChatId(selId: string | undefined): string | undefined {
+  if (!selId) return undefined;
+  if (!selId.startsWith('person:')) return selId;
+  const person = useStore.getState().people.find((p) => `person:${p.id}` === selId);
+  return person?.defaultChatId ?? person?.chatIds[0];
+}
+
 function ChatRow({
   name,
   subtitle,
@@ -408,7 +416,7 @@ function ChatRow({
   const allBadges = badges ?? (badge ? [badge] : []);
   return (
     <button className={`contact-row${active ? ' active' : ''}`} onClick={onClick}>
-      <Avatar key={selId ?? name} name={name} chatId={selId && !selId.startsWith('person:') ? selId : undefined} />
+      <Avatar key={selId ?? name} name={name} chatId={avatarChatId(selId)} />
       <div className="contact-row-main">
         <div className="contact-row-top">
           <span className="contact-name">

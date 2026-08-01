@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import { config } from '../config.js';
 import {
@@ -837,8 +837,28 @@ api.post('/avatar/pick', async (req, res) => {
     }
     if (!tel) return res.status(400).json({ error: 'no phone number for this chat' });
 
-    const provider = providerForAccount(sourceChat.accountId);
-    const avatar = provider?.fetchAvatar ? await provider.fetchAvatar(sourceChat) : null;
+    // Use the CACHED avatar when fresh (the photo you're clicking on!),
+    // refetching from the provider only on a miss.
+    let avatar: { data: Buffer; contentType: string } | null = null;
+    const cachedRaw = getKv(`avatar:${sourceChat.id}`);
+    if (cachedRaw) {
+      const { url, ts } = JSON.parse(cachedRaw) as { url: string | null; ts: number };
+      if (url && Date.now() - ts < 7 * 86400000) {
+        const file = basename(url);
+        try {
+          avatar = {
+            data: readFileSync(getAvatarPath(file)),
+            contentType: mediaContentType(file),
+          };
+        } catch {
+          /* fall through to refetch */
+        }
+      }
+    }
+    if (!avatar) {
+      const provider = providerForAccount(sourceChat.accountId);
+      avatar = provider?.fetchAvatar ? await provider.fetchAvatar(sourceChat) : null;
+    }
     if (!avatar) return res.status(404).json({ error: 'no avatar available from this service' });
 
     const ok = await updateContactPhoto(tel, avatar.data, avatar.contentType);

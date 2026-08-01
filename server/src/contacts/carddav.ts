@@ -1,6 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 import { config } from '../config.js';
-import { upsertContacts } from '../store/db.js';
+import { getDb, getKv, setKv, upsertContacts } from '../store/db.js';
 import type { Contact } from '../types.js';
 import { normalizeTel } from './match.js';
 
@@ -169,47 +169,67 @@ export async function updateContactPhoto(
   try {
     // Find the vCard by normalized digits (TEL formats vary wildly in DAV).
     const targetDigits = tel.replace(/\D/g, '').slice(-9);
-    const books = await discoverAddressBooks();
-    for (const book of books) {
-      const report = await dav(book, {
-        method: 'REPORT',
-        headers: { Depth: '1', 'Content-Type': 'application/xml; charset=utf-8' },
-        body: `<?xml version="1.0"?>
-          <c:addressbook-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav">
-            <d:prop><d:getetag/>
-              <c:address-data><c:prop name="VERSION"/><c:prop name="FN"/><c:prop name="TEL"/></c:address-data>
-            </d:prop>
-          </c:addressbook-query>`,
-      });
-      const xml = await report.text();
-      // Per response entry: href + TELs — match normalized digits.
-      for (const entry of xml.split(/<d:response>/i).slice(1)) {
-        const href = entry.match(/<[^>]*href[^>]*>([^<]+\.vcf)<\/[^>]*href>/i)?.[1];
-        if (!href) continue;
-        const tels = [...unescapeXml(entry).matchAll(/TEL[^:]*:([^<\n]+)/g)].map((m) =>
-          m[1].replace(/\D/g, '')
-        );
-        if (!tels.some((t) => t.endsWith(targetDigits))) continue;
+    const hrefCacheKey = `davhref:${targetDigits}`;
+    let href: string | undefined;
+    try {
+      const cached = getKv(hrefCacheKey);
+      if (cached) href = (JSON.parse(cached) as { href: string }).href;
+    } catch {
+      /* miss */
+    }
 
-        // Found it — fetch the full vCard, swap PHOTO, PUT back.
-        const getRes = await dav(href, { headers: { 'Content-Type': 'text/vcard' } });
-        const vcardText = await getRes.text();
-        if (!vcardText.includes('BEGIN:VCARD')) continue;
-
-        const mime = contentType.toUpperCase().includes('PNG') ? 'PNG' : 'JPEG';
-        const folded = (imageData.toString('base64').match(/.{1,72}/g) ?? []).join('\r\n ');
-        const photoLine = `PHOTO;ENCODING=b;TYPE=${mime}:${folded}`;
-        const updated = vcardText
-          .replace(/^PHOTO[^:]*:.*(?:\r?\n(?:[ \t].*)?)*/gim, '')
-          .replace(/(FN:.*(?:\r?\n|$))/i, `$1${photoLine}\r\n`);
-
-        const put = await dav(href, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'text/vcard; charset=utf-8' },
-          body: updated,
+    if (!href) {
+      const books = await discoverAddressBooks();
+      for (const book of books) {
+        const report = await dav(book, {
+          method: 'REPORT',
+          headers: { Depth: '1', 'Content-Type': 'application/xml; charset=utf-8' },
+          body: `<?xml version="1.0"?>
+            <c:addressbook-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav">
+              <d:prop><d:getetag/>
+                <c:address-data><c:prop name="VERSION"/><c:prop name="FN"/><c:prop name="TEL"/></c:address-data>
+              </d:prop>
+            </c:addressbook-query>`,
         });
-        if (put.status === 204 || put.status === 201) return true;
+        const xml = await report.text();
+        // Per response entry: href + TELs — match normalized digits.
+        for (const entry of xml.split(/<d:response>/i).slice(1)) {
+          const candidate = entry.match(/<[^>]*href[^>]*>([^<]+\.vcf)<\/[^>]*href>/i)?.[1];
+          if (!candidate) continue;
+          const tels = [...unescapeXml(entry).matchAll(/TEL[^:]*:([^<\n]+)/g)].map((m) =>
+            m[1].replace(/\D/g, '')
+          );
+          if (!tels.some((t) => t.endsWith(targetDigits))) continue;
+          href = candidate;
+          break;
+        }
+        if (href) break;
       }
+      if (href) setKv(hrefCacheKey, JSON.stringify({ href, ts: Date.now() }));
+    }
+    if (!href) return false;
+
+    // Fetch the full vCard, swap PHOTO, PUT back.
+    const getRes = await dav(href, { headers: { 'Content-Type': 'text/vcard' } });
+    const vcardText = await getRes.text();
+    if (!vcardText.includes('BEGIN:VCARD')) return false;
+
+    const mime = contentType.toUpperCase().includes('PNG') ? 'PNG' : 'JPEG';
+    const folded = (imageData.toString('base64').match(/.{1,72}/g) ?? []).join('\r\n ');
+    const photoLine = `PHOTO;ENCODING=b;TYPE=${mime}:${folded}`;
+    const updated = vcardText
+      .replace(/^PHOTO[^:]*:.*(?:\r?\n(?:[ \t].*)?)*/gim, '')
+      .replace(/(FN:.*(?:\r?\n|$))/i, `$1${photoLine}\r\n`);
+
+    const put = await dav(href, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'text/vcard; charset=utf-8' },
+      body: updated,
+    });
+    if (put.status === 204 || put.status === 201) return true;
+    // Stale cached href? Drop it so the next lookup re-scans.
+    if (put.status === 404 || put.status === 412) {
+      getDb().prepare('DELETE FROM kv WHERE key = ?').run(hrefCacheKey);
     }
     return false;
   } catch (e) {
