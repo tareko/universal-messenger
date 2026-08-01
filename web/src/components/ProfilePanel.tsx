@@ -175,7 +175,15 @@ export function ProfilePanel({
     }
   }
   function onPastePhoto(e: ClipboardEvent) {
-    const file = Array.from(e.clipboardData?.files ?? []).find((f) => f.type.startsWith('image/'));
+    // Prefer the items API (most reliable in Firefox), fall back to files.
+    let file: File | null = null;
+    for (const item of Array.from(e.clipboardData?.items ?? [])) {
+      if (item.kind === 'file' && item.type.startsWith('image/')) {
+        file = item.getAsFile();
+        break;
+      }
+    }
+    file ??= Array.from(e.clipboardData?.files ?? []).find((f) => f.type.startsWith('image/')) ?? null;
     if (!file) return;
     e.preventDefault();
     void onPickPhotoFile(file);
