@@ -174,12 +174,19 @@ export function ProfilePanel({
       setPickError((e as Error).message);
     }
   }
-  function onPastePhoto(e: React.ClipboardEvent) {
+  function onPastePhoto(e: ClipboardEvent) {
     const file = Array.from(e.clipboardData?.files ?? []).find((f) => f.type.startsWith('image/'));
     if (!file) return;
     e.preventDefault();
     void onPickPhotoFile(file);
   }
+
+  // Firefox only delivers paste events on editable elements or the document —
+  // listen at document level while the panel is open.
+  useEffect(() => {
+    document.addEventListener('paste', onPastePhoto);
+    return () => document.removeEventListener('paste', onPastePhoto);
+  }, []);
 
   async function linkChat(chatId: string) {
     setAddQuery('');
@@ -226,7 +233,7 @@ export function ProfilePanel({
         </div>
 
         {(isDm || person) && (
-          <div className="profile-section" onPaste={onPastePhoto}>
+          <div className="profile-section">
             <div className="profile-section-title">Profile photo</div>
             <div className="profile-avatars">
               {avatars.map((a) => (
