@@ -61,6 +61,13 @@ const logger = pino({ level: 'warn' });
 const sessionDir = resolve(projectRoot, 'data', 'sessions', 'whatsapp');
 const HISTORY_PER_CHAT = 150;
 
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
+  ]);
+}
+
 export type WaState = 'idle' | 'connecting' | 'qr' | 'open' | 'close';
 
 /**
@@ -901,9 +908,10 @@ export class WhatsAppProvider implements Provider {
     const jid = this.jidForChat(chat);
     // WhatsApp Web loads thumbs via 'preview'; full 'image' fails more often
     // (privacy, missing photos). Try both before declaring "no photo".
+    // profilePictureUrl HANGS for some contacts — bound each attempt.
     for (const kind of ['image', 'preview'] as const) {
       try {
-        const url = await this.sock.profilePictureUrl(jid, kind);
+        const url = await withTimeout(this.sock.profilePictureUrl(jid, kind), 8000);
         if (!url) continue;
         const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
         if (!res.ok) continue;
