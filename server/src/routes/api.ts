@@ -772,7 +772,7 @@ api.get('/media/avatars/:file', (req, res) => {
   const path = getAvatarPath(file);
   if (!existsSync(path)) return res.status(404).send('not found');
   res.setHeader('Content-Type', mediaContentType(file));
-  res.setHeader('Cache-Control', 'private, max-age=86400');
+  res.setHeader('Cache-Control', 'private, max-age=604800'); // 7 days, matches kv freshness
   res.sendFile(path);
 });
 
