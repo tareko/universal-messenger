@@ -1,10 +1,35 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { useStore } from '../store';
 import { Avatar } from './Avatar';
 import { providerBadge } from './AccountSwitcher';
 import { formatTime } from './Thread';
 import type { Chat, Person, Tag } from '../types';
+
+function loadImageFromBlob(blob: Blob): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+/** Resize/re-encode an image for the DAV PHOTO field (max 512px, JPEG q0.85). */
+async function prepareImage(file: Blob): Promise<{ blob: Blob; contentType: string }> {
+  const img = await loadImageFromBlob(file);
+  const scale = Math.min(1, 512 / Math.max(img.naturalWidth, img.naturalHeight));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('cannot get canvas context');
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.85));
+  if (!blob) throw new Error('could not encode image');
+  return { blob, contentType: 'image/jpeg' };
+}
 
 /**
  * Right-drawer profile for a chat or linked person: identity details, linked
@@ -33,18 +58,37 @@ export function ProfilePanel({
   const [onWhatsApp, setOnWhatsApp] = useState<boolean | null>(null);
   const [numbers, setNumbers] = useState<string[]>([]);
   const [taxonomy, setTaxonomy] = useState<Tag[]>([]);
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [avatars, setAvatars] = useState<{ chatId: string; provider: string; url: string | null }[]>([]);
   const [picked, setPicked] = useState(false);
   const [pickError, setPickError] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const sourceChats = person ? memberChats : [chat];
 
   useEffect(() => {
     void api.tags().then(setTaxonomy).catch(() => {});
-    if (chat.type === 'dm' && !person) {
-      setAvatarUrl(null);
-      setPicked(false);
-      void api.avatar(chat.id).then((r) => setAvatarUrl(r.url)).catch(() => {});
+  }, []);
+
+  // Load avatar options from each source chat (one per service for linked people).
+  useEffect(() => {
+    setAvatars([]);
+    setPicked(false);
+    setPickError('');
+    for (const c of sourceChats) {
+      void api
+        .avatar(c.id)
+        .then((r) => {
+          if (r.url) {
+            setAvatars((prev) =>
+              prev.some((p) => p.chatId === c.id)
+                ? prev
+                : [...prev, { chatId: c.id, provider: c.provider, url: r.url }]
+            );
+          }
+        })
+        .catch(() => {});
     }
-  }, [chat.id, chat.type, person]);
+  }, [chat.id, person?.id]);
 
   const isDm = chat.type === 'dm';
   const account = accounts.find((a) => a.id === chat.accountId);
@@ -88,6 +132,53 @@ export function ProfilePanel({
     } finally {
       setBusy(false);
     }
+  }
+
+  async function pick(chatId: string, avatarChatId?: string) {
+    setPickError('');
+    setPicked(false);
+    await run(async () => {
+      try {
+        await api.pickAvatar(chatId, avatarChatId);
+        setPicked(true);
+      } catch (e) {
+        setPickError((e as Error).message);
+      }
+    });
+  }
+
+  async function uploadPhoto(blob: Blob, _contentType: string) {
+    setPickError('');
+    setPicked(false);
+    await run(async () => {
+      try {
+        await api.uploadAvatar(chat.id, blob);
+        setPicked(true);
+        await refreshChats();
+      } catch (e) {
+        setPickError((e as Error).message);
+      }
+    });
+  }
+
+  async function onPickPhotoFile(file: File | undefined) {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setPickError('Only image files are supported.');
+      return;
+    }
+    try {
+      const { blob } = await prepareImage(file);
+      await uploadPhoto(blob, 'image/jpeg');
+    } catch (e) {
+      setPickError((e as Error).message);
+    }
+  }
+  function onPastePhoto(e: React.ClipboardEvent) {
+    const file = Array.from(e.clipboardData?.files ?? []).find((f) => f.type.startsWith('image/'));
+    if (!file) return;
+    e.preventDefault();
+    void onPickPhotoFile(file);
   }
 
   async function linkChat(chatId: string) {
@@ -134,29 +225,41 @@ export function ProfilePanel({
           </button>
         </div>
 
-        {isDm && !person && avatarUrl && (
-          <div className="profile-section">
+        {(isDm || person) && (
+          <div className="profile-section" onPaste={onPastePhoto}>
             <div className="profile-section-title">Profile photo</div>
             <div className="profile-avatars">
+              {avatars.map((a) => (
+                <button
+                  key={a.chatId}
+                  className="profile-avatar-option"
+                  title={`Use the ${a.provider} photo for the contact card`}
+                  disabled={busy}
+                  onClick={() => void pick(chat.id, a.chatId)}
+                >
+                  <img src={a.url!} alt={a.provider} className="profile-avatar-img" />
+                  <span className="provider-badge">{providerBadge(a.provider)}</span>
+                </button>
+              ))}
               <button
-                className="profile-avatar-option"
-                title="Use this photo for the contact card"
-                disabled={busy || picked}
-                onClick={() =>
-                  void run(async () => {
-                    setPickError('');
-                    try {
-                      await api.pickAvatar(chat.id);
-                      setPicked(true);
-                    } catch (e) {
-                      setPickError((e as Error).message);
-                    }
-                  })
-                }
+                className="profile-avatar-upload"
+                title="Upload or paste a photo for the contact card"
+                disabled={busy}
+                onClick={() => fileRef.current?.click()}
               >
-                <Avatar name={chat.name ?? chat.remoteId} size={56} chatId={chat.id} />
+                ＋
               </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={(e) => void onPickPhotoFile(e.target.files?.[0])}
+              />
             </div>
+            <p className="profile-hint">
+              Click a photo to use it, or ＋ to upload/paste your own.
+            </p>
             {picked && <div className="profile-avatar-picked">✓ Saved to the contact card</div>}
             {pickError && <div className="attach-error">{pickError}</div>}
           </div>

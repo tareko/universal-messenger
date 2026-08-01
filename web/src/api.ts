@@ -198,7 +198,19 @@ export const api = {
     getJson<{ name: string | null; numbers: string[] }>(`/contacts/lookup?tel=${encodeURIComponent(tel)}`),
   avatar: (chatId: string) =>
     getJson<{ url: string | null; retry?: boolean }>(`/avatar/${encodeURIComponent(chatId)}`),
-  pickAvatar: (chatId: string) => postJson<{ ok: boolean }>('/avatar/pick', { chatId }),
+  pickAvatar: (chatId: string, avatarChatId?: string) =>
+    postJson<{ ok: boolean }>('/avatar/pick', { chatId, avatarChatId }),
+  uploadAvatar: (chatId: string, blob: Blob) => {
+    const fd = new FormData();
+    fd.append('chatId', chatId);
+    fd.append('photo', blob, 'photo');
+    return fetch(base + '/avatar/upload', { method: 'POST', headers: authHeaders(), body: fd }).then(
+      async (r) => {
+        if (!r.ok) throw new Error(await errorMessage(r));
+        return (await r.json()) as { ok: boolean };
+      }
+    );
+  },
   people: () => getJson<Person[]>('/people'),
   createPerson: (name: string, chatIds: string[], defaultChatId?: string, sendMode?: string) =>
     postJson<{ ok: boolean; id: number }>('/people', { name, chatIds, defaultChatId, sendMode }),

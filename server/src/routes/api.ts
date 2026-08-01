@@ -814,9 +814,11 @@ api.get('/avatar/:chatId', async (req, res) => {
 /** Save a chat's avatar into the DAV contact card's PHOTO property. */
 api.post('/avatar/pick', async (req, res) => {
   try {
-    const { chatId } = req.body as { chatId: string };
+    const { chatId, avatarChatId } = req.body as { chatId: string; avatarChatId?: string };
     const chat = chatId ? getChat(chatId) : null;
     if (!chat) return res.status(404).json({ error: 'chat not found' });
+    const sourceChat = avatarChatId ? getChat(avatarChatId) : chat;
+    if (!sourceChat) return res.status(404).json({ error: 'source chat not found' });
 
     // Resolve a phone for the contact: the chat itself, or a linked member chat.
     let tel = chat.remoteId.startsWith('+') ? chat.remoteId : null;
@@ -835,12 +837,51 @@ api.post('/avatar/pick', async (req, res) => {
     }
     if (!tel) return res.status(400).json({ error: 'no phone number for this chat' });
 
-    const provider = providerForAccount(chat.accountId);
-    const avatar = provider?.fetchAvatar ? await provider.fetchAvatar(chat) : null;
+    const provider = providerForAccount(sourceChat.accountId);
+    const avatar = provider?.fetchAvatar ? await provider.fetchAvatar(sourceChat) : null;
     if (!avatar) return res.status(404).json({ error: 'no avatar available from this service' });
 
     const ok = await updateContactPhoto(tel, avatar.data, avatar.contentType);
     if (!ok) return res.status(502).json({ error: 'failed to write photo to the contact card' });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+/** Upload a custom photo (user-provided) into the DAV contact card. */
+api.post('/avatar/upload', upload.single('photo'), async (req, res) => {
+  try {
+    const { chatId } = req.body as { chatId: string };
+    const file = req.file;
+    const chat = chatId ? getChat(chatId) : null;
+    if (!chat) return res.status(404).json({ error: 'chat not found' });
+    if (!file || !file.mimetype.startsWith('image/')) {
+      return res.status(400).json({ error: 'image file required' });
+    }
+
+    let tel = chat.remoteId.startsWith('+') ? chat.remoteId : null;
+    if (!tel) {
+      const personId = getChatPersonMap().get(chatId);
+      if (personId !== undefined) {
+        const person = getPeople().find((p) => p.id === personId);
+        for (const memberId of person?.chatIds ?? []) {
+          const member = getChat(memberId);
+          if (member?.remoteId.startsWith('+')) {
+            tel = member.remoteId;
+            break;
+          }
+        }
+      }
+    }
+    if (!tel) return res.status(400).json({ error: 'no phone number for this chat' });
+
+    const ok = await updateContactPhoto(tel, file.buffer, file.mimetype);
+    if (!ok) return res.status(502).json({ error: 'failed to write photo to the contact card' });
+    // Show the uploaded photo in-app too.
+    const ref = saveAvatar(chatId, file.buffer, file.mimetype);
+    setKv(`avatar:${chatId}`, JSON.stringify({ url: ref.url, ts: Date.now() }));
+    broadcast({ type: 'chats-updated' });
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
