@@ -69,6 +69,11 @@ export function initDb() {
       raw_tel TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS contact_hrefs (
+      tel  TEXT PRIMARY KEY,
+      href TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS kv (
       key   TEXT PRIMARY KEY,
       value TEXT
@@ -1114,6 +1119,25 @@ export function upsertContacts(contacts: Contact[]): number {
     return items.length;
   });
   return tx(contacts);
+}
+
+/** Record a contact's vCard href (for fast photo writes — no full-book scan). */
+export function setContactHref(tel: string, href: string): void {
+  getDb()
+    .prepare('INSERT INTO contact_hrefs(tel, href) VALUES(?, ?) ON CONFLICT(tel) DO UPDATE SET href = excluded.href')
+    .run(tel, href);
+}
+
+export function getContactHref(tel: string): string | null {
+  const digits = tel.replace(/\D/g, '');
+  const rows = getDb().prepare('SELECT tel, href FROM contact_hrefs').all() as {
+    tel: string;
+    href: string;
+  }[];
+  for (const r of rows) {
+    if (r.tel.replace(/\D/g, '').endsWith(digits.slice(-9))) return r.href;
+  }
+  return null;
 }
 
 export function getContactName(tel: string): string | null {

@@ -1,6 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 import { config } from '../config.js';
-import { getDb, getKv, setKv, upsertContacts } from '../store/db.js';
+import { getContactHref, getDb, getKv, setContactHref, setKv, upsertContacts } from '../store/db.js';
 import type { Contact } from '../types.js';
 import { normalizeTel } from './match.js';
 
@@ -91,7 +91,7 @@ async function discoverAddressBooks(): Promise<string[]> {
   return books;
 }
 
-async function fetchVCards(addressBookHref: string): Promise<string[]> {
+async function fetchVCards(addressBookHref: string): Promise<{ href: string; card: string }[]> {
   const res = await dav(addressBookHref, {
     method: 'REPORT',
     headers: { Depth: '1', 'Content-Type': 'application/xml; charset=utf-8' },
@@ -110,13 +110,16 @@ async function fetchVCards(addressBookHref: string): Promise<string[]> {
   });
   if (!res.ok) throw new Error(`CardDAV query failed: HTTP ${res.status} for ${addressBookHref}`);
   const xml = parser.parse(await res.text());
-  const cards: string[] = [];
+  const cards: { href: string; card: string }[] = [];
   for (const entry of toArrayResponses(xml)) {
+    const href = String(entry.href ?? '');
     const propstat = entry.propstat as Record<string, unknown> | undefined;
     const prop = (propstat?.prop ?? {}) as Record<string, unknown>;
     const data = prop['address-data'];
-    if (typeof data === 'string') cards.push(unescapeXml(data));
-    else if (Array.isArray(data)) for (const d of data) if (typeof d === 'string') cards.push(unescapeXml(d));
+    const texts: string[] = [];
+    if (typeof data === 'string') texts.push(unescapeXml(data));
+    else if (Array.isArray(data)) for (const d of data) if (typeof d === 'string') texts.push(unescapeXml(d));
+    for (const card of texts) cards.push({ href, card });
   }
   return cards;
 }
@@ -170,12 +173,14 @@ export async function updateContactPhoto(
     // Find the vCard by normalized digits (TEL formats vary wildly in DAV).
     const targetDigits = tel.replace(/\D/g, '').slice(-9);
     const hrefCacheKey = `davhref:${targetDigits}`;
-    let href: string | undefined;
-    try {
-      const cached = getKv(hrefCacheKey);
-      if (cached) href = (JSON.parse(cached) as { href: string }).href;
-    } catch {
-      /* miss */
+    let href: string | undefined = getContactHref(tel) ?? undefined;
+    if (!href) {
+      try {
+        const cached = getKv(hrefCacheKey);
+        if (cached) href = (JSON.parse(cached) as { href: string }).href;
+      } catch {
+        /* miss */
+      }
     }
 
     if (!href) {
@@ -249,12 +254,15 @@ export async function syncContacts(): Promise<number> {
     const contacts: Contact[] = [];
     for (const book of books) {
       const cards = await fetchVCards(book);
-      for (const card of cards) {
+      for (const { href, card } of cards) {
         const parsed = parseVCard(card);
         if (!parsed) continue;
         for (const rawTel of parsed.tels) {
           const tel = normalizeTel(rawTel);
-          if (tel) contacts.push({ tel, name: parsed.fn ?? 'Unknown', rawTel });
+          if (tel) {
+            contacts.push({ tel, name: parsed.fn ?? 'Unknown', rawTel });
+            if (href) setContactHref(tel, href);
+          }
         }
       }
     }

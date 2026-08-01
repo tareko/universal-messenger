@@ -156,15 +156,26 @@ export function ProfilePanel({
   async function pick(chatId: string, avatarChatId?: string) {
     setPickError('');
     setPicked(false);
-    try {
-      await api.pickAvatar(chatId, avatarChatId);
-      setAvatarError(chatId, null);
-      setPicked(true);
-      await refreshDisplayedPhoto();
-      await refreshChats();
-    } catch (e) {
-      setAvatarError(chatId, (e as Error).message);
+    // Optimistic: apply the chosen photo IMMEDIATELY, write to DAV in background.
+    const chosen = avatars.find((a) => a.chatId === avatarChatId);
+    if (chosen?.url) {
+      primeAvatarCache(chatId, chosen.url);
+      setAvatars((prev) => {
+        const rest = prev.filter((a) => a.chatId !== chatId);
+        return [...rest, { chatId, provider: chat.provider, url: chosen.url }];
+      });
     }
+    void (async () => {
+      try {
+        await api.pickAvatar(chatId, avatarChatId);
+        setAvatarError(chatId, null);
+        setPicked(true);
+        await refreshDisplayedPhoto();
+        await refreshChats();
+      } catch (e) {
+        setAvatarError(chatId, (e as Error).message);
+      }
+    })();
   }
 
   async function onPickPhotoFile(file: File | undefined) {
