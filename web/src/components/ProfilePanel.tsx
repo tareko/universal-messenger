@@ -58,10 +58,11 @@ export function ProfilePanel({
   const [onWhatsApp, setOnWhatsApp] = useState<boolean | null>(null);
   const [numbers, setNumbers] = useState<string[]>([]);
   const [taxonomy, setTaxonomy] = useState<Tag[]>([]);
-  const [avatars, setAvatars] = useState<{ chatId: string; provider: string; url: string | null }[]>([]);
+  const [avatars, setAvatars] = useState<{ chatId: string; provider: string; url: string | null; uploading?: boolean; failed?: boolean }[]>([]);
   const [picked, setPicked] = useState(false);
   const [pickError, setPickError] = useState('');
-  const [importing, setImporting] = useState(false);
+  const avatarError = useStore((s) => s.avatarErrors[chat.id] ?? null);
+  const setAvatarError = useStore((s) => s.setAvatarError);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const sourceChats = person ? memberChats : [chat];
@@ -155,32 +156,14 @@ export function ProfilePanel({
   async function pick(chatId: string, avatarChatId?: string) {
     setPickError('');
     setPicked(false);
-    setImporting(true);
     try {
       await api.pickAvatar(chatId, avatarChatId);
+      setAvatarError(chatId, null);
       setPicked(true);
       await refreshDisplayedPhoto();
       await refreshChats();
     } catch (e) {
-      setPickError((e as Error).message);
-    } finally {
-      setImporting(false);
-    }
-  }
-
-  async function uploadPhoto(blob: Blob, _contentType: string) {
-    setPickError('');
-    setPicked(false);
-    setImporting(true);
-    try {
-      await api.uploadAvatar(chat.id, blob);
-      setPicked(true);
-      await refreshDisplayedPhoto();
-      await refreshChats();
-    } catch (e) {
-      setPickError((e as Error).message);
-    } finally {
-      setImporting(false);
+      setAvatarError(chatId, (e as Error).message);
     }
   }
 
@@ -192,7 +175,32 @@ export function ProfilePanel({
     }
     try {
       const { blob } = await prepareImage(file);
-      await uploadPhoto(blob, 'image/jpeg');
+      // Optimistic: show the pasted photo as the profile photo IMMEDIATELY,
+      // then upload in the background.
+      const objectUrl = URL.createObjectURL(blob);
+      setAvatars((prev) => [
+        ...prev.filter((a) => a.chatId !== '__pending__'),
+        { chatId: '__pending__', provider: 'you', url: objectUrl, uploading: true },
+      ]);
+      setAvatarError(chat.id, null);
+      setPickError('');
+
+      void (async () => {
+        try {
+          await api.uploadAvatar(chat.id, blob);
+          setAvatarError(chat.id, null);
+          setPicked(true);
+          URL.revokeObjectURL(objectUrl);
+          await refreshDisplayedPhoto();
+          await refreshChats();
+        } catch (e) {
+          // Persistent failure — visible until the next success.
+          setAvatarError(chat.id, (e as Error).message);
+          setAvatars((prev) =>
+            prev.map((a) => (a.chatId === '__pending__' ? { ...a, uploading: false, failed: true } : a))
+          );
+        }
+      })();
     } catch (e) {
       setPickError((e as Error).message);
     }
@@ -270,13 +278,21 @@ export function ProfilePanel({
               {avatars.map((a) => (
                 <button
                   key={a.chatId}
-                  className="profile-avatar-option"
-                  title={`Use the ${a.provider} photo for the contact card`}
-                  disabled={busy}
-                  onClick={() => void pick(chat.id, a.chatId)}
+                  className={`profile-avatar-option${a.uploading ? ' uploading' : ''}${a.failed ? ' failed' : ''}`}
+                  title={
+                    a.chatId === '__pending__'
+                      ? a.failed
+                        ? 'Upload failed — click to retry'
+                        : 'Uploading…'
+                      : `Use the ${a.provider} photo for the contact card`
+                  }
+                  disabled={busy || a.uploading}
+                  onClick={() => (a.chatId === '__pending__' ? undefined : void pick(chat.id, a.chatId))}
                 >
                   <img src={a.url!} alt={a.provider} className="profile-avatar-img" />
-                  <span className="provider-badge">{providerBadge(a.provider)}</span>
+                  <span className="provider-badge">
+                    {a.uploading ? '…' : a.failed ? '⚠' : providerBadge(a.provider)}
+                  </span>
                 </button>
               ))}
               <button
@@ -296,11 +312,14 @@ export function ProfilePanel({
               />
             </div>
             <p className="profile-hint">
-              {importing
-                ? 'Importing…'
+              {avatars.some((a) => a.uploading)
+                ? 'Uploading in the background…'
                 : 'Click a photo to use it, or ＋ to upload/paste your own.'}
             </p>
-            {picked && !importing && <div className="profile-avatar-picked">✓ Saved to the contact card</div>}
+            {avatarError && (
+              <div className="attach-error">Upload failed: {avatarError} (photo kept locally; retry by pasting again)</div>
+            )}
+            {picked && !avatarError && <div className="profile-avatar-picked">✓ Saved to the contact card</div>}
             {pickError && <div className="attach-error">{pickError}</div>}
           </div>
         )}

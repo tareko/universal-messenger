@@ -24,6 +24,8 @@ interface StoreState {
   drafts: Record<string, string>;
   /** AI suggestion cache per chat, keyed to the latest message ts at fetch time. */
   suggestionCache: Record<string, { lastTs: number; items: string[] }>;
+  /** Persistent per-chat avatar upload failure (visible until next success). */
+  avatarErrors: Record<string, string>;
   hasOlder: boolean; // more history available (DB or provider-side)
   loadingOlder: boolean;
   unreadAtOpen: number; // unread count captured when the chat was opened
@@ -68,6 +70,7 @@ interface StoreState {
   submitEdit: (text: string) => Promise<void>;
   setDraft: (chatId: string, text: string) => void;
   setSuggestionCache: (chatId: string, lastTs: number, items: string[]) => void;
+  setAvatarError: (chatId: string, error: string | null) => void;
   /** Effective chat id for actions (resolves person selections to a real chat). */
   targetChatId: () => string | null;
   markRead: (chatId: string) => Promise<void>;
@@ -95,6 +98,7 @@ export const useStore = create<StoreState>((set, get) => ({
   editing: null,
   drafts: {},
   suggestionCache: {},
+  avatarErrors: {},
   hasOlder: true,
   loadingOlder: false,
   unreadAtOpen: 0,
@@ -487,6 +491,13 @@ export const useStore = create<StoreState>((set, get) => ({
 
   setSuggestionCache: (chatId, lastTs, items) =>
     set((s) => ({ suggestionCache: { ...s.suggestionCache, [chatId]: { lastTs, items } } })),
+
+  setAvatarError: (chatId, error) =>
+    set((s) => ({
+      avatarErrors: error
+        ? { ...s.avatarErrors, [chatId]: error }
+        : Object.fromEntries(Object.entries(s.avatarErrors).filter(([k]) => k !== chatId)),
+    })),
 
   markRead: async (chatId: string) => {
     const ids = isPersonSelection(chatId) ? memberChatIds(get()) : [chatId];

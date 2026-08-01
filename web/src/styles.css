@@ -878,3 +878,7 @@ body {
   font-size: 22px; color: var(--text-muted); cursor: pointer;
 }
 .profile-avatar-upload:hover { border-color: var(--accent); color: var(--accent); }
+
+.profile-avatar-option.uploading { opacity: 0.5; }
+.profile-avatar-option.uploading .provider-badge { animation: spin 0.9s linear infinite; }
+.profile-avatar-option.failed { border-color: var(--danger); }
