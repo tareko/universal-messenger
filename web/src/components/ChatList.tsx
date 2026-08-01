@@ -408,7 +408,7 @@ function ChatRow({
   const allBadges = badges ?? (badge ? [badge] : []);
   return (
     <button className={`contact-row${active ? ' active' : ''}`} onClick={onClick}>
-      <Avatar name={name} chatId={selId && !selId.startsWith('person:') ? selId : undefined} />
+      <Avatar key={selId ?? name} name={name} chatId={selId && !selId.startsWith('person:') ? selId : undefined} />
       <div className="contact-row-main">
         <div className="contact-row-top">
           <span className="contact-name">

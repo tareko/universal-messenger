@@ -6,6 +6,8 @@ const cache = new Map<string, string | null>();
 function useAvatarUrl(chatId?: string): string | null {
   const [url, setUrl] = useState<string | null>(chatId ? (cache.get(chatId) ?? null) : null);
   useEffect(() => {
+    // Sync with the current chatId (rows get reused in reordered lists).
+    setUrl(chatId ? (cache.get(chatId) ?? null) : null);
     if (!chatId || cache.has(chatId)) return;
     let active = true;
     void api
