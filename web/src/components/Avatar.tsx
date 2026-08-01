@@ -43,7 +43,12 @@ export function Avatar({ name, size = 40, chatId }: { name: string; size?: numbe
         src={url}
         alt={name}
         style={{ width: size, height: size }}
-        onError={() => setImgOk(false)}
+        onError={() => {
+          // Transient failures (server restart, network) shouldn't hide the
+          // photo forever — retry shortly instead of latching to initials.
+          setImgOk(false);
+          setTimeout(() => setImgOk(true), 30_000);
+        }}
       />
     );
   }

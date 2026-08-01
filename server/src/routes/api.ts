@@ -790,7 +790,9 @@ api.get('/avatar/:chatId', async (req, res) => {
     const cached = getKv(key);
     if (cached) {
       const { url, ts } = JSON.parse(cached) as { url: string | null; ts: number };
-      const freshFor = url ? 7 * 86400000 : 86400000;
+      // Photos cache a week; misses only 15 minutes (provider may have been
+      // mid-connect when it failed).
+      const freshFor = url ? 7 * 86400000 : 900_000;
       if (Date.now() - ts < freshFor) return res.json({ url });
     }
 
