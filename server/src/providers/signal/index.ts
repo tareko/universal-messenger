@@ -380,6 +380,24 @@ export class SignalProvider implements Provider {
     }
   }
 
+  /** Fetch the contact's avatar via the sidecar profile endpoint. */
+  async fetchAvatar(chat: Chat): Promise<{ data: Buffer; contentType: string } | null> {
+    if (!this.number || this.state !== 'open' || chat.type !== 'dm') return null;
+    try {
+      const res = await fetch(
+        `${this.base}/v1/profiles/${encodeURIComponent(this.number)}/${encodeURIComponent(chat.remoteId)}/avatar`,
+        { signal: AbortSignal.timeout(15000) }
+      );
+      if (!res.ok) return null;
+      return {
+        data: Buffer.from(await res.arrayBuffer()),
+        contentType: res.headers.get('content-type')?.split(';')[0] ?? 'image/jpeg',
+      };
+    } catch {
+      return null;
+    }
+  }
+
   /** signal-cli recipients format for a chat remoteId. */
   private static recipientsFor(chat: Chat): string[] {
     return [chat.remoteId]; // dm: '+1555...', group: 'group.<base64>'

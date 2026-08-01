@@ -156,6 +156,68 @@ export function getCarddavStatus(): string {
   return lastStatus;
 }
 
+/**
+ * Write a PHOTO into a contact's vCard (Nextcloud CardDAV).
+ * Finds the contact by phone number, replaces/inserts PHOTO, PUTs it back.
+ */
+export async function updateContactPhoto(
+  tel: string,
+  imageData: Buffer,
+  contentType: string
+): Promise<boolean> {
+  if (!config.nextcloud.url || !config.nextcloud.username || !config.nextcloud.password) return false;
+  try {
+    // Find the vCard by normalized digits (TEL formats vary wildly in DAV).
+    const targetDigits = tel.replace(/\D/g, '').slice(-9);
+    const books = await discoverAddressBooks();
+    for (const book of books) {
+      const report = await dav(book, {
+        method: 'REPORT',
+        headers: { Depth: '1', 'Content-Type': 'application/xml; charset=utf-8' },
+        body: `<?xml version="1.0"?>
+          <c:addressbook-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav">
+            <d:prop><d:getetag/>
+              <c:address-data><c:prop name="VERSION"/><c:prop name="FN"/><c:prop name="TEL"/></c:address-data>
+            </d:prop>
+          </c:addressbook-query>`,
+      });
+      const xml = await report.text();
+      // Per response entry: href + TELs — match normalized digits.
+      for (const entry of xml.split(/<d:response>/i).slice(1)) {
+        const href = entry.match(/<[^>]*href[^>]*>([^<]+\.vcf)<\/[^>]*href>/i)?.[1];
+        if (!href) continue;
+        const tels = [...unescapeXml(entry).matchAll(/TEL[^:]*:([^<\n]+)/g)].map((m) =>
+          m[1].replace(/\D/g, '')
+        );
+        if (!tels.some((t) => t.endsWith(targetDigits))) continue;
+
+        // Found it — fetch the full vCard, swap PHOTO, PUT back.
+        const getRes = await dav(href, { headers: { 'Content-Type': 'text/vcard' } });
+        const vcardText = await getRes.text();
+        if (!vcardText.includes('BEGIN:VCARD')) continue;
+
+        const mime = contentType.toUpperCase().includes('PNG') ? 'PNG' : 'JPEG';
+        const folded = (imageData.toString('base64').match(/.{1,72}/g) ?? []).join('\r\n ');
+        const photoLine = `PHOTO;ENCODING=b;TYPE=${mime}:${folded}`;
+        const updated = vcardText
+          .replace(/^PHOTO[^:]*:.*(?:\r?\n(?:[ \t].*)?)*/gim, '')
+          .replace(/(FN:.*(?:\r?\n|$))/i, `$1${photoLine}\r\n`);
+
+        const put = await dav(href, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'text/vcard; charset=utf-8' },
+          body: updated,
+        });
+        if (put.status === 204 || put.status === 201) return true;
+      }
+    }
+    return false;
+  } catch (e) {
+    console.error('[carddav] updateContactPhoto failed:', (e as Error).message);
+    return false;
+  }
+}
+
 export async function syncContacts(): Promise<number> {
   if (!config.nextcloud.url || !config.nextcloud.username || !config.nextcloud.password) {
     lastStatus = 'disabled';

@@ -5,7 +5,9 @@ import { config, projectRoot } from '../config.js';
 import type { MediaRef } from '../types.js';
 
 const mediaDir = resolve(projectRoot, 'data', 'media');
+const avatarDir = resolve(projectRoot, 'data', 'media', 'avatars');
 mkdirSync(mediaDir, { recursive: true });
+mkdirSync(avatarDir, { recursive: true });
 
 const EXT_BY_TYPE: Record<string, string> = {
   'image/jpeg': 'jpg',
@@ -51,6 +53,19 @@ export function loadMediaBuffer(ref: MediaRef): { data: string; contentType: str
   } catch {
     return null;
   }
+}
+
+/** Save a profile avatar and return its local ref (stable filename per key). */
+export function saveAvatar(key: string, buf: Buffer, contentType: string): MediaRef {
+  const ct = (contentType || 'image/jpeg').split(';')[0].trim();
+  const hash = createHash('sha1').update(key).digest('hex').slice(0, 20);
+  const file = `${hash}.${extFor(ct)}`;
+  writeFileSync(resolve(avatarDir, file), buf);
+  return { url: `/api/media/avatars/${file}`, contentType: ct };
+}
+
+export function getAvatarPath(file: string): string {
+  return resolve(avatarDir, basename(file));
 }
 
 /** Save an uploaded attachment buffer (outgoing media) and return its local ref. */

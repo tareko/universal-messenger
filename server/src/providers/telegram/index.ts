@@ -674,6 +674,20 @@ export class TelegramProvider implements Provider {
     }
   }
 
+  /** Fetch the profile photo of the user/chat. */
+  async fetchAvatar(chat: Chat): Promise<{ data: Buffer; contentType: string } | null> {
+    if (!this.client || this.state !== 'open') return null;
+    try {
+      const peer = await this.peerFor(chat.remoteId);
+      const buf = (await this.client.downloadProfilePhoto(peer, { isBig: true })) as
+        | Buffer
+        | undefined;
+      return buf && buf.length ? { data: buf, contentType: 'image/jpeg' } : null;
+    } catch {
+      return null;
+    }
+  }
+
   /** Group members for @mention autocomplete. */
   async fetchParticipants(chat: Chat): Promise<{ id: string; name: string }[] | null> {
     if (!this.client || this.state !== 'open' || chat.type !== 'group') return null;

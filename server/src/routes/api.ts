@@ -49,11 +49,11 @@ import { WhatsAppProvider } from '../providers/whatsapp/index.js';
 import { TelegramProvider } from '../providers/telegram/index.js';
 import { MattermostProvider } from '../providers/mattermost/index.js';
 import { SignalProvider } from '../providers/signal/index.js';
-import { syncContacts, getCarddavStatus } from '../contacts/carddav.js';
+import { syncContacts, getCarddavStatus, updateContactPhoto } from '../contacts/carddav.js';
 import { aiEnabled } from '../ai/actions.js';
 import { config as appConfig } from '../config.js';
 import { getNotifySettings, saveNotifySettings, type NotifySettings } from '../notify/settings.js';import { broadcast } from '../realtime/sse.js';
-import { getMediaPath, mediaContentType, saveUploadedMedia, loadMediaBuffer } from '../services/media.js';
+import { getMediaPath, mediaContentType, saveUploadedMedia, loadMediaBuffer, saveAvatar, getAvatarPath } from '../services/media.js';
 import { backfillReactions } from '../services/backfill.js';
 import { normalizeTel } from '../contacts/match.js';
 import { ingest } from '../services/ingest.js';
@@ -764,6 +764,80 @@ api.get('/media/:file', (req, res) => {
   res.setHeader('Content-Type', mediaContentType(file));
   res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
   res.sendFile(path);
+});
+
+/** Serve a cached avatar file. */
+api.get('/media/avatars/:file', (req, res) => {
+  const file = basename(String(req.params.file));
+  const path = getAvatarPath(file);
+  if (!existsSync(path)) return res.status(404).send('not found');
+  res.setHeader('Content-Type', mediaContentType(file));
+  res.setHeader('Cache-Control', 'private, max-age=86400');
+  res.sendFile(path);
+});
+
+/**
+ * Avatar for a chat (lazy: fetches from the provider on first request,
+ * caches for a week, negative-caches misses for a day).
+ */
+api.get('/avatar/:chatId', async (req, res) => {
+  try {
+    const chatId = String(req.params.chatId);
+    const chat = getChat(chatId);
+    if (!chat) return res.status(404).json({ error: 'chat not found' });
+
+    const key = `avatar:${chatId}`;
+    const cached = getKv(key);
+    if (cached) {
+      const { url, ts } = JSON.parse(cached) as { url: string | null; ts: number };
+      const freshFor = url ? 7 * 86400000 : 86400000;
+      if (Date.now() - ts < freshFor) return res.json({ url });
+    }
+
+    const provider = providerForAccount(chat.accountId);
+    const avatar = provider?.fetchAvatar ? await provider.fetchAvatar(chat) : null;
+    const ref = avatar ? saveAvatar(chatId, avatar.data, avatar.contentType) : null;
+    setKv(key, JSON.stringify({ url: ref?.url ?? null, ts: Date.now() }));
+    res.json({ url: ref?.url ?? null });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+/** Save a chat's avatar into the DAV contact card's PHOTO property. */
+api.post('/avatar/pick', async (req, res) => {
+  try {
+    const { chatId } = req.body as { chatId: string };
+    const chat = chatId ? getChat(chatId) : null;
+    if (!chat) return res.status(404).json({ error: 'chat not found' });
+
+    // Resolve a phone for the contact: the chat itself, or a linked member chat.
+    let tel = chat.remoteId.startsWith('+') ? chat.remoteId : null;
+    if (!tel) {
+      const personId = getChatPersonMap().get(chatId);
+      if (personId !== undefined) {
+        const person = getPeople().find((p) => p.id === personId);
+        for (const memberId of person?.chatIds ?? []) {
+          const member = getChat(memberId);
+          if (member?.remoteId.startsWith('+')) {
+            tel = member.remoteId;
+            break;
+          }
+        }
+      }
+    }
+    if (!tel) return res.status(400).json({ error: 'no phone number for this chat' });
+
+    const provider = providerForAccount(chat.accountId);
+    const avatar = provider?.fetchAvatar ? await provider.fetchAvatar(chat) : null;
+    if (!avatar) return res.status(404).json({ error: 'no avatar available from this service' });
+
+    const ok = await updateContactPhoto(tel, avatar.data, avatar.contentType);
+    if (!ok) return res.status(502).json({ error: 'failed to write photo to the contact card' });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
 });
 
 /** Render page 1 of a PDF attachment to PNG (poppler), cached beside the file. */

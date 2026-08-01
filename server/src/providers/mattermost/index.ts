@@ -245,6 +245,29 @@ export class MattermostProvider implements Provider {
 
   // ---------- channels & history ----------
 
+  /** Fetch the user's profile image (DMs only — channels have no icon). */
+  async fetchAvatar(chat: Chat): Promise<{ data: Buffer; contentType: string } | null> {
+    if (this.state !== 'open' || chat.type !== 'dm') return null;
+    try {
+      // Resolve the other user id from the DM channel name (<uid1>__<uid2>).
+      const channel = this.channelCache.get(chat.remoteId) ?? (await this.lookupChannel(chat.remoteId));
+      const parts = channel?.name.split('__') ?? [];
+      const otherId = parts.length === 2 ? parts.find((p) => p !== this.me?.id) : undefined;
+      if (!otherId) return null;
+      const res = await fetch(`${this.base}/users/${otherId}/image`, {
+        signal: AbortSignal.timeout(15000),
+        headers: { Authorization: `Bearer ${this.token}` },
+      });
+      if (!res.ok) return null;
+      return {
+        data: Buffer.from(await res.arrayBuffer()),
+        contentType: res.headers.get('content-type')?.split(';')[0] ?? 'image/jpeg',
+      };
+    } catch {
+      return null;
+    }
+  }
+
   private async syncChannels(): Promise<void> {
     if (!this.accountId) return;
     try {

@@ -60,7 +60,7 @@ export function ForwardDialog({ message, onClose }: { message: Message; onClose:
               disabled={sending}
               onClick={() => void pick(c.id)}
             >
-              <Avatar name={c.name ?? c.title ?? c.contactRaw ?? c.remoteId} size={32} />
+              <Avatar name={c.name ?? c.title ?? c.contactRaw ?? c.remoteId} size={32} chatId={c.id} />
               <div className="contact-row-main">
                 <div className="contact-row-top">
                   <span className="contact-name">

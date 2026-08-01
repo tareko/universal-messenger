@@ -895,6 +895,23 @@ export class WhatsAppProvider implements Provider {
     }
   }
 
+  /** Fetch the profile photo for a chat/contact (full-size when available). */
+  async fetchAvatar(chat: Chat): Promise<{ data: Buffer; contentType: string } | null> {
+    if (!this.sock || this.state !== 'open') return null;
+    try {
+      const url = await this.sock.profilePictureUrl(this.jidForChat(chat), 'image');
+      if (!url) return null;
+      const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+      if (!res.ok) return null;
+      return {
+        data: Buffer.from(await res.arrayBuffer()),
+        contentType: res.headers.get('content-type')?.split(';')[0] ?? 'image/jpeg',
+      };
+    } catch {
+      return null;
+    }
+  }
+
   /** Group members for @mention autocomplete. */
   async fetchParticipants(chat: Chat): Promise<{ id: string; name: string }[] | null> {
     if (!this.sock || this.state !== 'open' || chat.type !== 'group') return null;

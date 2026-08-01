@@ -33,10 +33,18 @@ export function ProfilePanel({
   const [onWhatsApp, setOnWhatsApp] = useState<boolean | null>(null);
   const [numbers, setNumbers] = useState<string[]>([]);
   const [taxonomy, setTaxonomy] = useState<Tag[]>([]);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [picked, setPicked] = useState(false);
+  const [pickError, setPickError] = useState('');
 
   useEffect(() => {
     void api.tags().then(setTaxonomy).catch(() => {});
-  }, []);
+    if (chat.type === 'dm' && !person) {
+      setAvatarUrl(null);
+      setPicked(false);
+      void api.avatar(chat.id).then((r) => setAvatarUrl(r.url)).catch(() => {});
+    }
+  }, [chat.id, chat.type, person]);
 
   const isDm = chat.type === 'dm';
   const account = accounts.find((a) => a.id === chat.accountId);
@@ -125,6 +133,34 @@ export function ProfilePanel({
             ✕
           </button>
         </div>
+
+        {isDm && !person && avatarUrl && (
+          <div className="profile-section">
+            <div className="profile-section-title">Profile photo</div>
+            <div className="profile-avatars">
+              <button
+                className="profile-avatar-option"
+                title="Use this photo for the contact card"
+                disabled={busy || picked}
+                onClick={() =>
+                  void run(async () => {
+                    setPickError('');
+                    try {
+                      await api.pickAvatar(chat.id);
+                      setPicked(true);
+                    } catch (e) {
+                      setPickError((e as Error).message);
+                    }
+                  })
+                }
+              >
+                <Avatar name={chat.name ?? chat.remoteId} size={56} chatId={chat.id} />
+              </button>
+            </div>
+            {picked && <div className="profile-avatar-picked">✓ Saved to the contact card</div>}
+            {pickError && <div className="attach-error">{pickError}</div>}
+          </div>
+        )}
 
         {isDm && (
           <div className="profile-section">
@@ -313,7 +349,7 @@ export function ProfilePanel({
             {addQuery.trim().length > 0 &&
               linkCandidates.map((c) => (
                 <button key={c.id} className="contact-row" disabled={busy} onClick={() => void linkChat(c.id)}>
-                  <Avatar name={c.name ?? c.contactRaw ?? c.remoteId} size={28} />
+                  <Avatar name={c.name ?? c.contactRaw ?? c.remoteId} size={28} chatId={c.id} />
                   <div className="contact-row-main">
                     <div className="contact-row-top">
                       <span className="contact-name">

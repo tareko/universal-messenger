@@ -858,3 +858,12 @@ body {
 .tool-btn.error { color: var(--danger); }
 
 .ai-suggestions-actions { display: flex; gap: 4px; }
+
+.avatar-photo { border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+.profile-avatars { display: flex; gap: 10px; flex-wrap: wrap; }
+.profile-avatar-option {
+  border: 2px solid transparent; border-radius: 8px; padding: 2px;
+  cursor: pointer; background: transparent;
+}
+.profile-avatar-option:hover { border-color: var(--accent); }
+.profile-avatar-picked { font-size: 11px; color: var(--accent); }

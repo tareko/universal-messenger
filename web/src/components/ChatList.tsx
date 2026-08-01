@@ -278,6 +278,7 @@ export function ChatList() {
                   channel={r.channel}
                   pinned={r.pinned}
                   tags={r.tags}
+                  selId={r.selId}
                   onClick={() => void selectChat(r.selId)}
                 />
               ))}
@@ -329,6 +330,7 @@ export function ChatList() {
               channel={r.channel}
               pinned={r.pinned}
               tags={r.tags}
+              selId={r.selId}
               onClick={() => void selectChat(r.selId)}
             />
           ))
@@ -382,6 +384,7 @@ function ChatRow({
   linked,
   group,
   channel,
+  selId,
   pinned,
   tags,
   onClick,
@@ -399,12 +402,13 @@ function ChatRow({
   channel?: boolean;
   pinned?: boolean;
   tags?: { id: number; name: string; color: string }[];
+  selId?: string;
   onClick: () => void;
 }) {
   const allBadges = badges ?? (badge ? [badge] : []);
   return (
     <button className={`contact-row${active ? ' active' : ''}`} onClick={onClick}>
-      <Avatar name={name} />
+      <Avatar name={name} chatId={selId && !selId.startsWith('person:') ? selId : undefined} />
       <div className="contact-row-main">
         <div className="contact-row-top">
           <span className="contact-name">
