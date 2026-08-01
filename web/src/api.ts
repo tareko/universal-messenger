@@ -196,7 +196,8 @@ export const api = {
     getJson<{ onWhatsApp: boolean | null }>(`/providers/whatsapp/check?number=${encodeURIComponent(number)}`),
   contactLookup: (tel: string) =>
     getJson<{ name: string | null; numbers: string[] }>(`/contacts/lookup?tel=${encodeURIComponent(tel)}`),
-  avatar: (chatId: string) => getJson<{ url: string | null }>(`/avatar/${encodeURIComponent(chatId)}`),
+  avatar: (chatId: string) =>
+    getJson<{ url: string | null; retry?: boolean }>(`/avatar/${encodeURIComponent(chatId)}`),
   pickAvatar: (chatId: string) => postJson<{ ok: boolean }>('/avatar/pick', { chatId }),
   people: () => getJson<Person[]>('/people'),
   createPerson: (name: string, chatIds: string[], defaultChatId?: string, sendMode?: string) =>

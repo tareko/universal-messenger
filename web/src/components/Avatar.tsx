@@ -10,13 +10,22 @@ function useAvatarUrl(chatId?: string): string | null {
     setUrl(chatId ? (cache.get(chatId) ?? null) : null);
     if (!chatId || cache.has(chatId)) return;
     let active = true;
-    void api
-      .avatar(chatId)
-      .then((r) => {
-        cache.set(chatId, r.url);
-        if (active) setUrl(r.url);
-      })
-      .catch(() => cache.set(chatId, null));
+    const fetchOnce = () => {
+      void api
+        .avatar(chatId)
+        .then((r) => {
+          if (!active) return;
+          // Only successful fetches are cached — misses retry on next mount.
+          if (r.url) cache.set(chatId, r.url);
+          setUrl(r.url);
+          // Provider was mid-connect: retry once shortly.
+          if (r.retry && active) setTimeout(() => active && fetchOnce(), 15_000);
+        })
+        .catch(() => {
+          /* retry on next mount */
+        });
+    };
+    fetchOnce();
     return () => {
       active = false;
     };

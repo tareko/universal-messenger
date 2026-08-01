@@ -895,21 +895,27 @@ export class WhatsAppProvider implements Provider {
     }
   }
 
-  /** Fetch the profile photo for a chat/contact (full-size when available). */
+  /** Fetch the profile photo for a chat/contact (full-size, thumb fallback). */
   async fetchAvatar(chat: Chat): Promise<{ data: Buffer; contentType: string } | null> {
     if (!this.sock || this.state !== 'open') return null;
-    try {
-      const url = await this.sock.profilePictureUrl(this.jidForChat(chat), 'image');
-      if (!url) return null;
-      const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
-      if (!res.ok) return null;
-      return {
-        data: Buffer.from(await res.arrayBuffer()),
-        contentType: res.headers.get('content-type')?.split(';')[0] ?? 'image/jpeg',
-      };
-    } catch {
-      return null;
+    const jid = this.jidForChat(chat);
+    // WhatsApp Web loads thumbs via 'preview'; full 'image' fails more often
+    // (privacy, missing photos). Try both before declaring "no photo".
+    for (const kind of ['image', 'preview'] as const) {
+      try {
+        const url = await this.sock.profilePictureUrl(jid, kind);
+        if (!url) continue;
+        const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+        if (!res.ok) continue;
+        return {
+          data: Buffer.from(await res.arrayBuffer()),
+          contentType: res.headers.get('content-type')?.split(';')[0] ?? 'image/jpeg',
+        };
+      } catch {
+        /* try the next kind */
+      }
     }
+    return null;
   }
 
   /** Group members for @mention autocomplete. */

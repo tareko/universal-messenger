@@ -797,6 +797,11 @@ api.get('/avatar/:chatId', async (req, res) => {
     }
 
     const provider = providerForAccount(chat.accountId);
+    // Provider not connected yet (boot/reconnect window): don't cache a
+    // false miss — tell the client to retry shortly.
+    if (provider?.fetchAvatar && provider.status() !== 'open') {
+      return res.json({ url: null, retry: true });
+    }
     const avatar = provider?.fetchAvatar ? await provider.fetchAvatar(chat) : null;
     const ref = avatar ? saveAvatar(chatId, avatar.data, avatar.contentType) : null;
     setKv(key, JSON.stringify({ url: ref?.url ?? null, ts: Date.now() }));
