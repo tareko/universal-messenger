@@ -957,10 +957,10 @@ function ContactActions({ chat }: { chat: import('../types').Chat }) {
       {onWhatsApp && waAccount && (
         <button
           className="wa-badge"
-          title="This number is on WhatsApp — open the WhatsApp chat"
+          title={`${chat.remoteId} is also on WhatsApp — switch to the WhatsApp chat`}
           onClick={() => void openWaChat()}
         >
-          WhatsApp
+          ↗ WhatsApp
         </button>
       )}
     </>
