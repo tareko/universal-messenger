@@ -35,7 +35,7 @@ const EMOJI_TO_NAME: Record<string, string> = {
   '🔥': 'fire',
   '👀': 'eyes',
   '🤷': 'shrug',
-  '🤦': 'facepalm',
+  '🤦': 'face_palm',
   '😅': 'sweat_smile',
   '😊': 'smile',
   '😇': 'innocent',
