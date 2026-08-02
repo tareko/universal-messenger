@@ -669,7 +669,7 @@ function Bubble({
       {picker && morePicker && (
         <>
           <div className="react-backdrop" onClick={() => { setMorePicker(false); setPicker(false); }} />
-          <div className={`react-full-picker ${incoming ? 'in' : 'out'}`}>
+          <div className="react-full-picker">
             <EmojiPicker
               onPick={(char) => {
                 onReact(char);
@@ -686,7 +686,7 @@ function Bubble({
         <div className="react-backdrop" onClick={() => setPicker(false)} />
       )}
       <div className={`bubble-wrap ${incoming ? 'in' : 'out'}`}>
-        {hover && (canReact || canForward) && (
+        {hover && !morePicker && (canReact || canForward) && (
           <div className={`hover-actions ${incoming ? 'in' : 'out'}`}>
             {picker && !morePicker ? (
               <div className="react-bar">

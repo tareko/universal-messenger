@@ -596,10 +596,8 @@ body {
 .bubble-text { text-align: start; }
 
 .react-full-picker {
-  position: absolute; bottom: calc(100% + 8px); z-index: 30;
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100;
 }
-.react-full-picker.in { left: 0; }
-.react-full-picker.out { right: 0; }
 .bubble-wrap { position: relative; }
 
 .stealth-toggle {
