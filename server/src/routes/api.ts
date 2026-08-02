@@ -278,7 +278,11 @@ async function fetchLinkPreview(url: string): Promise<LinkPreview | null> {
       },
     });
     const ct = res.headers.get('content-type') ?? '';
-    if (!res.ok || !ct.includes('text/html')) return null;
+    if (!res.ok || !ct.includes('text/html')) {
+      // Cache failures briefly too — a slow/dead site shouldn't cost 8s every render.
+      setKv(key, JSON.stringify(null));
+      return null;
+    }
     const html = (await res.text()).slice(0, 200_000);
     const title =
       pickMeta(html, 'title') ??
@@ -294,6 +298,7 @@ async function fetchLinkPreview(url: string): Promise<LinkPreview | null> {
     setKv(key, JSON.stringify(preview));
     return preview;
   } catch {
+    setKv(key, JSON.stringify(null)); // negative-cache fetch errors as well
     return null;
   }
 }
