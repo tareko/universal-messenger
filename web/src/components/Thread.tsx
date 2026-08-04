@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useStore, isPersonSelection } from '../store';
 import { api } from '../api';
 import { Avatar } from './Avatar';
@@ -171,15 +171,20 @@ export function Thread() {
   }, [replyTo]);
 
   // Index of the first unread message (the last `unreadAtOpen` incoming ones).
+  // Only the most recent RENDER_WINDOW messages render at once — older loaded
+  // pages stay in the store but off-DOM (scroll-to-load still works).
+  const RENDER_WINDOW = 300;
+  const visibleMessages = messages.length > RENDER_WINDOW ? messages.slice(-RENDER_WINDOW) : messages;
+
   const firstUnreadIdx = useMemo(() => {
     if (!unreadAtOpen) return -1;
     let remaining = unreadAtOpen;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].outgoing === 0 && --remaining === 0) return i;
+    for (let i = visibleMessages.length - 1; i >= 0; i--) {
+      if (visibleMessages[i].outgoing === 0 && --remaining === 0) return i;
     }
     // More unread than loaded messages — the boundary is off-screen above.
-    return messages.some((m) => m.outgoing === 0) ? 0 : -1;
-  }, [messages, unreadAtOpen]);
+    return visibleMessages.some((m) => m.outgoing === 0) ? 0 : -1;
+  }, [visibleMessages, unreadAtOpen]);
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
@@ -444,8 +449,8 @@ export function Thread() {
       >
         {loadingOlder && <div className="thread-day">Loading older…</div>}
         {!hasOlder && messages.length > 0 && <div className="thread-day">Start of history</div>}
-        {messages.map((m, i) => {
-          const prev = messages[i - 1];
+        {visibleMessages.map((m, i) => {
+          const prev = visibleMessages[i - 1];
           const showDate =
             !prev || new Date(prev.ts).toDateString() !== new Date(m.ts).toDateString();
           return (
@@ -462,7 +467,7 @@ export function Thread() {
                   </span>
                 </div>
               )}
-              <Bubble
+              <MemoBubble
                 msg={m}
                 isGroup={chat.type === 'group'}
                 canReact={canReact}
@@ -1026,3 +1031,36 @@ export function formatTime(ts: number): string {
   if (sameDay) return time;
   return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${time}`;
 }
+
+/** Shallow content comparison for Bubble memoization (ignores handler refs). */
+function bubbleEqual(
+  a: { msg: Message; isGroup: boolean; canReact: boolean; canReply: boolean; provider: string; showProvider?: boolean; canTranslate?: boolean },
+  b: { msg: Message; isGroup: boolean; canReact: boolean; canReply: boolean; provider: string; showProvider?: boolean; canTranslate?: boolean }
+): boolean {
+  const m1 = a.msg;
+  const m2 = b.msg;
+  return (
+    m1.id === m2.id &&
+    m1.ts === m2.ts &&
+    m1.body === m2.body &&
+    m1.edited === m2.edited &&
+    m1.deleted === m2.deleted &&
+    m1.receipt === m2.receipt &&
+    m1.status === m2.status &&
+    m1.mediaPending === m2.mediaPending &&
+    m1.sender === m2.sender &&
+    m1.senderName === m2.senderName &&
+    (m1.reactions?.length ?? 0) === (m2.reactions?.length ?? 0) &&
+    (m1.media?.length ?? 0) === (m2.media?.length ?? 0) &&
+    m1.quotedId === m2.quotedId &&
+    a.isGroup === b.isGroup &&
+    a.canReact === b.canReact &&
+    a.canReply === b.canReply &&
+    a.provider === b.provider &&
+    a.showProvider === b.showProvider &&
+    a.canTranslate === b.canTranslate
+  );
+}
+
+const MemoBubble = memo(Bubble, bubbleEqual);
+

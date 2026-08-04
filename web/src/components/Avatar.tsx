@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { useStore } from '../store';
 
@@ -44,8 +44,12 @@ function useAvatarUrl(chatId?: string): string | null {
 export function Avatar({ name, size = 40, chatId }: { name: string; size?: number; chatId?: string }) {
   const url = useAvatarUrl(chatId);
   const [imgOk, setImgOk] = useState(true);
+  const retries = useRef(0);
 
-  useEffect(() => setImgOk(true), [url]);
+  useEffect(() => {
+    setImgOk(true);
+    retries.current = 0;
+  }, [url]);
 
   const initials = name
     .split(/\s+/)
@@ -63,10 +67,15 @@ export function Avatar({ name, size = 40, chatId }: { name: string; size?: numbe
         alt={name}
         style={{ width: size, height: size }}
         onError={() => {
-          // Transient failures (server restart, network) shouldn't hide the
-          // photo forever — retry shortly instead of latching to initials.
-          setImgOk(false);
-          setTimeout(() => setImgOk(true), 30_000);
+          // Transient failures (server restart, network) — retry twice, then
+          // give up to initials (no infinite retry loops accumulating).
+          if (retries.current < 2) {
+            retries.current++;
+            setImgOk(false);
+            setTimeout(() => setImgOk(true), 30_000);
+          } else {
+            setImgOk(false);
+          }
         }}
       />
     );

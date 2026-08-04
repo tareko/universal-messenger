@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { useStore } from '../store';
 import type { Contact, Message } from '../types';
@@ -264,7 +264,7 @@ export function ChatList() {
           <>
             {displayRows.length > 0 &&
               displayRows.map((r) => (
-                <ChatRow
+                <MemoChatRow
                   key={r.selId}
                   name={r.name}
                   subtitle={r.subtitle}
@@ -283,7 +283,7 @@ export function ChatList() {
                 />
               ))}
             {results.map((c) => (
-              <ChatRow
+              <MemoChatRow
                 key={c.tel}
                 name={c.name}
                 subtitle={c.rawTel || c.tel}
@@ -296,7 +296,7 @@ export function ChatList() {
               <>
                 <div className="search-section">Messages</div>
                 {msgHits.map((h) => (
-                  <ChatRow
+                  <MemoChatRow
                     key={h.message.id}
                     name={h.chatName ?? h.chatId}
                     subtitle={h.message.body}
@@ -316,7 +316,7 @@ export function ChatList() {
           </>
         ) : (
           displayRows.map((r) => (
-            <ChatRow
+            <MemoChatRow
               key={r.selId}
               name={r.name}
               subtitle={r.subtitle}
@@ -372,7 +372,32 @@ function previewText(
   return '';
 }
 
-/** Which chat's avatar to show: person rows use the default member chat. */
+/** Content comparison for ChatRow memoization (ignores the onClick handler). */
+function chatRowEqual(
+  a: Record<string, unknown>,
+  b: Record<string, unknown>
+): boolean {
+  return (
+    a.name === b.name &&
+    a.subtitle === b.subtitle &&
+    a.subtitleTyping === b.subtitleTyping &&
+    a.ts === b.ts &&
+    a.unread === b.unread &&
+    a.active === b.active &&
+    a.badge === b.badge &&
+    a.linked === b.linked &&
+    a.group === b.group &&
+    a.channel === b.channel &&
+    a.pinned === b.pinned &&
+    a.selId === b.selId &&
+    JSON.stringify(a.badges) === JSON.stringify(b.badges) &&
+    JSON.stringify(a.tags) === JSON.stringify(b.tags)
+  );
+}
+
+const MemoChatRow = memo(ChatRow, chatRowEqual);
+
+/** Content comparison for ChatRow memoization (ignores the onClick handler). */
 function avatarChatId(selId: string | undefined): string | undefined {
   if (!selId) return undefined;
   if (!selId.startsWith('person:')) return selId;
