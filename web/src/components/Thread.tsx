@@ -896,8 +896,23 @@ function LinkPreview({ messageId }: { messageId: string }) {
 
 /** Short human label for a non-media attachment's mime type. */
 function fileLabel(contentType: string): string {
+  const FRIENDLY: Record<string, string> = {
+    'application/pdf': 'PDF document',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'Word document',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'Excel spreadsheet',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'PowerPoint',
+    'application/msword': 'Word document',
+    'application/vnd.ms-excel': 'Excel spreadsheet',
+    'application/vnd.ms-powerpoint': 'PowerPoint',
+    'application/zip': 'ZIP archive',
+    'application/x-rar-compressed': 'RAR archive',
+    'application/x-7z-compressed': '7z archive',
+    'text/plain': 'Text file',
+    'text/csv': 'CSV file',
+    'application/json': 'JSON file',
+  };
+  if (FRIENDLY[contentType]) return FRIENDLY[contentType];
   const subtype = contentType.split('/')[1] ?? contentType;
-  if (contentType === 'application/pdf') return 'PDF document';
   return subtype.toUpperCase().slice(0, 24);
 }
 
