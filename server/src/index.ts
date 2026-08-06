@@ -15,6 +15,15 @@ async function main() {
   checkConfig();
   initDb();
 
+  // A dropped connection in one provider/fetch must never take the process
+  // down — log and keep serving.
+  process.on('uncaughtException', (err) => {
+    console.error('[fatal:uncaught]', (err as Error).message);
+  });
+  process.on('unhandledRejection', (reason) => {
+    console.error('[fatal:unhandled]', (reason as Error)?.message ?? reason);
+  });
+
   const app = express();
   app.use(cors());
   app.use(express.json());
