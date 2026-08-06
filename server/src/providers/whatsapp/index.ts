@@ -1022,14 +1022,36 @@ export class WhatsAppProvider implements Provider {
       const jid = `${digits}@s.whatsapp.net`;
       if (!mentionedJids.includes(jid)) mentionedJids.push(jid);
     }
-    const content: AnyMessageContent = m
-      ? {
-          image: Buffer.from(m.data, 'base64'),
+    // Content by media kind: image / video / document (documents keep names).
+    let content: AnyMessageContent;
+    if (m) {
+      const buf = Buffer.from(m.data, 'base64');
+      if (m.contentType.startsWith('image/')) {
+        content = {
+          image: buf,
           caption: text || undefined,
           mimetype: m.contentType,
           mentions: mentionedJids.length ? mentionedJids : undefined,
-        }
-      : { text, mentions: mentionedJids.length ? mentionedJids : undefined };
+        };
+      } else if (m.contentType.startsWith('video/')) {
+        content = {
+          video: buf,
+          caption: text || undefined,
+          mimetype: m.contentType,
+          mentions: mentionedJids.length ? mentionedJids : undefined,
+        };
+      } else {
+        content = {
+          document: buf,
+          mimetype: m.contentType,
+          fileName: m.name ?? 'attachment',
+          caption: text || undefined,
+          mentions: mentionedJids.length ? mentionedJids : undefined,
+        };
+      }
+    } else {
+      content = { text, mentions: mentionedJids.length ? mentionedJids : undefined };
+    }
 
     // Respect the chat's disappearing-messages setting, if enabled.
     const sendOpts: Parameters<WASocket['sendMessage']>[2] = { quoted };

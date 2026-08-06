@@ -557,10 +557,13 @@ export class TelegramProvider implements Provider {
 
     if (m) {
       const buf = Buffer.from(m.data, 'base64');
+      // Non-images go as documents with the original filename.
       sent = (await this.client.sendFile(peer, {
         file: buf,
         caption: payload.body || undefined,
         replyTo,
+        forceDocument: !m.contentType.startsWith('image/'),
+        attributes: m.name ? [new Api.DocumentAttributeFilename({ fileName: m.name })] : undefined,
       })) as Api.Message;
       await ingest(
         {

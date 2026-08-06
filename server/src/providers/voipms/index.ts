@@ -45,6 +45,10 @@ export class VoipMsProvider implements Provider {
     const dst = toVoipNumber(chat.remoteId);
     const body = payload.body;
     const media = payload.media ?? [];
+    // MMS can only carry images — documents aren't supported by carriers.
+    if (media.some((m) => !m.contentType.startsWith('image/'))) {
+      throw new Error('SMS/MMS supports image attachments only');
+    }
     const tooLong = body.length > 160;
 
     let id: string;

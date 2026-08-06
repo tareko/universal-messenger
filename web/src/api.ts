@@ -133,10 +133,11 @@ export const api = {
     postJson<{ ok: boolean; fetched: number }>('/fetch-older', { chatId }),
   send: (chatId: string, message: string, quotedId?: string, mentions?: { name: string; memberId: string }[]) =>
     postJson<{ ok: boolean; id: string }>('/send', { chatId, message, quotedId, mentions }),
-  sendMedia: (chatId: string, message: string, file: Blob, contentType: string) => {
+  sendMedia: (chatId: string, message: string, file: Blob, contentType: string, filename?: string) => {
     const fd = new FormData();
     fd.append('chatId', chatId);
     fd.append('message', message);
+    if (filename) fd.append('filename', filename);
     fd.append('media', file, contentType.startsWith('image/') ? 'photo' : 'attachment');
     return fetch(base + '/send-media', { method: 'POST', headers: authHeaders(), body: fd }).then(async (r) => {
       if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);

@@ -749,7 +749,11 @@ export class MattermostProvider implements Provider {
         { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp' }[
           m.contentType
         ] ?? 'jpg';
-      form.append('files', new Blob([Buffer.from(m.data, 'base64')], { type: m.contentType }), `photo.${ext}`);
+      form.append(
+        'files',
+        new Blob([Buffer.from(m.data, 'base64')], { type: m.contentType }),
+        m.name ?? `photo.${ext}`
+      );
       const res = await fetch(`${this.base}/files`, {
         method: 'POST',
         signal: AbortSignal.timeout(30000),

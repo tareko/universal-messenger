@@ -64,7 +64,7 @@ export const api = Router();
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 8 * 1024 * 1024 }, // headroom; client resizes before upload
+  limits: { fileSize: 100 * 1024 * 1024 }, // documents up to 100MB
 });
 
 // Optional bearer-token auth. If APP_API_TOKEN is unset (default), the backend
@@ -682,7 +682,7 @@ api.post('/send', async (req, res) => {
   }
 });
 
-/** Send a message with an image attachment (multipart upload). */
+/** Send a message with an attachment (multipart upload — images or documents). */
 api.post('/send-media', upload.single('media'), async (req, res) => {
   try {
     const chatId = String(req.body?.chatId || '');
@@ -690,9 +690,6 @@ api.post('/send-media', upload.single('media'), async (req, res) => {
     const file = req.file;
     if (!chatId || !file) {
       return res.status(400).json({ error: 'chatId and media file required' });
-    }
-    if (!file.mimetype.startsWith('image/')) {
-      return res.status(400).json({ error: 'only image attachments are supported' });
     }
     const chat = getChat(chatId);
     if (!chat) return res.status(404).json({ error: 'chat not found' });
@@ -709,10 +706,11 @@ api.post('/send-media', upload.single('media'), async (req, res) => {
       chat.accountId,
       provider.capabilities
     );
+    const fileName = req.body?.filename ? String(req.body.filename) : undefined;
     const result = await provider.send(chat, {
       body: q.body,
       quotedId: q.quotedId,
-      media: [{ data: file.buffer.toString('base64'), contentType: file.mimetype }],
+      media: [{ data: file.buffer.toString('base64'), contentType: file.mimetype, name: fileName }],
     });
     res.json({ ok: true, id: result.id ? `${chat.accountId}:${result.id}` : '' });
   } catch (err) {

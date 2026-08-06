@@ -61,7 +61,8 @@ interface StoreState {
     contentType: string,
     text: string,
     previewUrl?: string,
-    forceChatId?: string
+    forceChatId?: string,
+    filename?: string
   ) => Promise<void>;
   retryText: (id: string, text: string) => Promise<void>;
   reactMessage: (messageId: string, emoji: string) => Promise<void>;
@@ -370,7 +371,8 @@ export const useStore = create<StoreState>((set, get) => ({
     contentType: string,
     text: string,
     previewUrl?: string,
-    forceChatId?: string
+    forceChatId?: string,
+    filename?: string
   ) => {
     const { selectedChat, messages, chats } = get();
     const body = text.trim();
@@ -397,7 +399,7 @@ export const useStore = create<StoreState>((set, get) => ({
     set({ messages: [...messages, opt], scrollNonce: get().scrollNonce + 1 });
     bumpChat(targetChatId, opt, set);
     try {
-      const res = await api.sendMedia(targetChatId, body, file, contentType);
+      const res = await api.sendMedia(targetChatId, body, file, contentType, filename);
       patchMessage(set, optId, { id: res.id || optId, status: 'sent' });
     } catch (e) {
       patchMessage(set, optId, { status: 'failed', error: (e as Error).message });

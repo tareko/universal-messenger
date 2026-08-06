@@ -288,12 +288,15 @@ export function Composer() {
   async function onPickFile(file: File | undefined) {
     setPrepError(null);
     if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      setPrepError('Only image attachments are supported.');
+    if (file.size > 100 * 1024 * 1024) {
+      setPrepError('File too large (100 MB max).');
       return;
     }
     try {
-      const { blob, contentType } = await prepareImage(file);
+      // Images go through resize/optimize; other documents upload as-is.
+      const { blob, contentType } = file.type.startsWith('image/')
+        ? await prepareImage(file)
+        : { blob: file, contentType: file.type || 'application/octet-stream' };
       if (attachment) URL.revokeObjectURL(attachment.previewUrl);
       setAttachment({
         blob,
@@ -303,7 +306,7 @@ export function Composer() {
         previewUrl: URL.createObjectURL(blob),
       });
     } catch (e) {
-      setPrepError((e as Error).message || 'Could not prepare image');
+      setPrepError((e as Error).message || 'Could not prepare file');
     }
   }
 
@@ -336,7 +339,7 @@ export function Composer() {
       setAttachment(null);
       setText('');
       setPrepError(null);
-      await sendMedia(att.blob, att.contentType, body, att.previewUrl, forced);
+      await sendMedia(att.blob, att.contentType, body, att.previewUrl, forced, att.name);
     } else {
       setText('');
       setPrepError(null);
@@ -454,7 +457,6 @@ export function Composer() {
         <input
           ref={fileRef}
           type="file"
-          accept="image/*"
           style={{ display: 'none' }}
           onChange={(e) => void onPickFile(e.target.files?.[0])}
         />
@@ -583,7 +585,11 @@ export function Composer() {
         )}
         {attachment && (
           <div className="attach-preview">
-            <img src={attachment.previewUrl} alt={attachment.name} />
+            {attachment.contentType.startsWith('image/') ? (
+              <img src={attachment.previewUrl} alt={attachment.name} />
+            ) : (
+              <span className="attach-file-icon">📎</span>
+            )}
             <div className="attach-info">
               <span className="attach-name">{attachment.name}</span>
               <span className="attach-size">{Math.round(attachment.size / 1024)} KB</span>

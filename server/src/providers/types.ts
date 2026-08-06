@@ -29,6 +29,8 @@ export interface NormalizedMessage {
 export interface OutgoingMedia {
   data: string; // base64 (no data: prefix)
   contentType: string;
+  /** Original filename (documents keep their name on the receiving side). */
+  name?: string;
 }
 
 export interface SendPayload {
