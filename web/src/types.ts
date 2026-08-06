@@ -1,6 +1,8 @@
 export interface MediaRef {
   url: string;
   contentType: string;
+  /** Original filename from the sender (for downloads/display). */
+  name?: string;
 }
 
 export interface ReactionRef {

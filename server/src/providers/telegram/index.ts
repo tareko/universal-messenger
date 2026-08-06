@@ -462,7 +462,8 @@ export class TelegramProvider implements Provider {
         const buf = await this.client.downloadMedia(msg, {});
         if (buf && typeof buf !== 'string') {
           const mime = msg.document?.mimeType ?? 'image/jpeg';
-          media = [saveMediaBuffer(buf as Buffer, mime, `${chatRemoteId}:${msg.id}`)];
+          const name = tgFileName(msg) ?? undefined;
+          media = [saveMediaBuffer(buf as Buffer, mime, `${chatRemoteId}:${msg.id}`, name)];
         }
       } catch (e) {
         console.error('[telegram] media download failed:', (e as Error).message);
@@ -755,4 +756,14 @@ function displayName(u: Api.User): string {
 
 function isImageDocument(doc: Api.Document): boolean {
   return Boolean(doc.mimeType?.startsWith('image/'));
+}
+
+/** Original filename from a document's attributes, if present. */
+function tgFileName(msg: Api.Message): string | null {
+  const doc = msg.document;
+  if (!doc) return null;
+  for (const attr of doc.attributes ?? []) {
+    if (attr instanceof Api.DocumentAttributeFilename) return attr.fileName ?? null;
+  }
+  return null;
 }

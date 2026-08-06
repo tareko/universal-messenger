@@ -600,7 +600,8 @@ export class WhatsAppProvider implements Provider {
       const content = unwrap(msg.message);
       const node = content ? extractMedia(content) : null;
       const mime = node?.mimetype ?? 'application/octet-stream';
-      return [saveMediaBuffer(buf, mime, msg.key?.id ?? undefined)];
+      const name = (node as { fileName?: string | null } | null)?.fileName ?? undefined;
+      return [saveMediaBuffer(buf, mime, msg.key?.id ?? undefined, name)];
     } catch (e) {
       console.error('[whatsapp] media download failed:', (e as Error).message);
       return undefined;

@@ -103,12 +103,12 @@ export function saveUploadedMedia(buf: Buffer, contentType: string): MediaRef {
 }
 
 /** Save a provider-downloaded buffer and return its local ref. */
-export function saveMediaBuffer(buf: Buffer, contentType: string, key?: string): MediaRef {
+export function saveMediaBuffer(buf: Buffer, contentType: string, key?: string, name?: string): MediaRef {
   const ct = (contentType || 'application/octet-stream').split(';')[0].trim();
   const hash = createHash('sha1').update(key ?? buf).digest('hex').slice(0, 20);
   const file = `${hash}.${extFor(ct)}`;
   writeFileSync(resolve(mediaDir, file), buf);
-  return { url: `/api/media/${file}`, contentType: ct };
+  return { url: `/api/media/${file}`, contentType: ct, ...(name ? { name } : {}) };
 }
 
 function authHeader(): string {

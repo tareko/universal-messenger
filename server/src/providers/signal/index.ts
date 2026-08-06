@@ -332,7 +332,7 @@ export class SignalProvider implements Provider {
             });
             if (!res.ok) continue;
             const buf = Buffer.from(await res.arrayBuffer());
-            refs.push(saveMediaBuffer(buf, a.contentType, baseId + a.id));
+            refs.push(saveMediaBuffer(buf, a.contentType, baseId + a.id, a.filename ?? undefined));
           } catch {
             /* skip failed downloads */
           }

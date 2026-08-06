@@ -812,9 +812,9 @@ function Bubble({
                   />
                 </a>
               )}
-              <a className="bubble-file" href={f.url} target="_blank" rel="noreferrer" download>
+              <a className="bubble-file" href={f.url} target="_blank" rel="noreferrer" download={f.name ?? true}>
                 <span className="bubble-file-icon">📎</span>
-                <span className="bubble-file-name">{fileLabel(f.contentType)}</span>
+                <span className="bubble-file-name">{f.name ?? fileLabel(f.contentType)}</span>
               </a>
             </div>
           ))}

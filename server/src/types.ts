@@ -1,6 +1,8 @@
 export interface MediaRef {
   url: string; // local serving path, e.g. /api/media/<file>
   contentType: string;
+  /** Original filename from the sender (for downloads/display). */
+  name?: string;
 }
 
 export interface ReactionRef {

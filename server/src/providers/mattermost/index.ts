@@ -538,7 +538,7 @@ export class MattermostProvider implements Provider {
           });
           if (!res.ok) continue;
           const buf = Buffer.from(await res.arrayBuffer());
-          refs.push(saveMediaBuffer(buf, f.mime_type ?? 'application/octet-stream', post.id + f.id));
+          refs.push(saveMediaBuffer(buf, f.mime_type ?? 'application/octet-stream', post.id + f.id, f.name ?? undefined));
         } catch {
           /* skip failed downloads */
         }
