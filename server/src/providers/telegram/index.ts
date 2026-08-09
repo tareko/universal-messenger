@@ -469,7 +469,14 @@ export class TelegramProvider implements Provider {
         console.error('[telegram] media download failed:', (e as Error).message);
       }
     }
-    if (!text && !hasImage) return false;
+    // Contact cards (shared contacts) → build a vCard.
+    let contactVcard: string | undefined;
+    if (msg.media instanceof Api.MessageMediaContact) {
+      const c = msg.media;
+      const fn = [c.firstName, c.lastName].filter(Boolean).join(' ').trim() || 'Contact';
+      contactVcard = `BEGIN:VCARD\r\nVERSION:3.0\r\nFN:${fn}\r\nTEL:${c.phoneNumber ?? ''}\r\nEND:VCARD`;
+    }
+    if (!text && !hasImage && !contactVcard) return false;
 
     // Group sender: store the user id (resolvable to a DM for reply-privately);
     // the display name is hydrated from the names table at query time.
@@ -491,6 +498,7 @@ export class TelegramProvider implements Provider {
         outgoing: Boolean(msg.out),
         body: text,
         media,
+        vcard: contactVcard,
         quotedRemoteId: msg.replyTo?.replyToMsgId
           ? `${chatRemoteId}:${msg.replyTo.replyToMsgId}`
           : undefined,

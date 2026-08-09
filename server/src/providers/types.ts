@@ -24,6 +24,8 @@ export interface NormalizedMessage {
   quotedRemoteId?: string; // provider-local id of the quoted message
   forwardedFrom?: string;
   carrierStatus?: string;
+  /** A shared contact card (vCard text). */
+  vcard?: string;
 }
 
 export interface OutgoingMedia {

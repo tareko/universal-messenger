@@ -519,6 +519,57 @@ function useParticipants(chatId: string, isGroup: boolean): { id: string; name: 
   return list;
 }
 
+/** A received contact card (shared contact) with save/message actions. */
+function ContactCard({ msg }: { msg: Message }) {
+  const selectChat = useStore((s) => s.selectChat);
+  const refreshChats = useStore((s) => s.refreshChats);
+  const accounts = useStore((s) => s.accounts);
+  const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const card = msg.contactCard!;
+  const waAccount = accounts.find((a) => a.provider === 'whatsapp' && a.status === 'active');
+
+  async function save() {
+    setState('saving');
+    try {
+      await api.addContact(card.name, card.tel ?? '');
+      setState('saved');
+    } catch {
+      setState('error');
+    }
+  }
+
+  async function messageOnWhatsApp() {
+    if (!card.tel || !waAccount) return;
+    try {
+      const r = await api.newChat(waAccount.id, card.tel);
+      await refreshChats();
+      await selectChat(r.chatId);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return (
+    <div className="contact-card">
+      <Avatar name={card.name} size={40} />
+      <div className="contact-card-info">
+        <div className="contact-card-name">{card.name}</div>
+        {card.tel && <div className="contact-card-tel">{card.tel}</div>}
+      </div>
+      <div className="contact-card-actions">
+        <button className="dialog-cancel" disabled={state === 'saving' || state === 'saved'} onClick={() => void save()}>
+          {state === 'saved' ? '✓ Saved' : state === 'saving' ? 'Saving…' : 'Save to contacts'}
+        </button>
+        {waAccount && card.tel && (
+          <button className="dialog-cancel" onClick={() => void messageOnWhatsApp()}>
+            Message on WhatsApp
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Bubble({
   msg,
   isGroup,
@@ -777,6 +828,7 @@ function Bubble({
             </div>
           )}
           {msg.forwardedFrom && <div className="bubble-forwarded">↪ Forwarded</div>}
+          {msg.contactCard && <ContactCard msg={msg} />}
           {msg.mediaPending && !media.length && (
             <div className="bubble-media-pending">📹 Attachment — downloading…</div>
           )}

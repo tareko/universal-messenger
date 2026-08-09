@@ -487,7 +487,9 @@ export class WhatsAppProvider implements Provider {
     const text = extractText(content);
     const mediaNode = extractMedia(content);
     const ctx = extractContext(content);
-    if (!text && !mediaNode) return null; // reactions/protocol handled elsewhere
+    // Contact cards (shared contacts) — capture the vCard for display.
+    const contactVcard = content.contactMessage?.vcard ?? null;
+    if (!text && !mediaNode && !contactVcard) return null; // reactions/protocol handled elsewhere
 
     const isGroup = key.remoteJid.endsWith('@g.us');
     const isChannel = key.remoteJid.endsWith('@newsletter');
@@ -545,6 +547,7 @@ export class WhatsAppProvider implements Provider {
         media,
         mediaPending,
         quotedRemoteId: ctx?.stanzaId ?? undefined,
+        vcard: contactVcard ?? undefined,
         // WhatsApp marks forwards in contextInfo (isForwarded/forwardingScore).
         forwardedFrom: (ctx as { isForwarded?: boolean } | null)?.isForwarded ? 'incoming' : undefined,
       },

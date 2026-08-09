@@ -49,7 +49,7 @@ import { WhatsAppProvider } from '../providers/whatsapp/index.js';
 import { TelegramProvider } from '../providers/telegram/index.js';
 import { MattermostProvider } from '../providers/mattermost/index.js';
 import { SignalProvider } from '../providers/signal/index.js';
-import { syncContacts, getCarddavStatus, updateContactPhoto } from '../contacts/carddav.js';
+import { syncContacts, getCarddavStatus, updateContactPhoto, createContact } from '../contacts/carddav.js';
 import { aiEnabled } from '../ai/actions.js';
 import { config as appConfig } from '../config.js';
 import { getNotifySettings, saveNotifySettings, type NotifySettings } from '../notify/settings.js';import { broadcast } from '../realtime/sse.js';
@@ -1064,6 +1064,16 @@ api.get('/search', (req, res) => {
 api.get('/contacts', (req, res) => {
   const q = String(req.query.q || '');
   res.json(searchContacts(q, 50));
+});
+
+/** Create a contact in the DAV address book (e.g. from a received vCard). */
+api.post('/contacts/add', async (req, res) => {
+  const { name, tel } = req.body as { name?: string; tel?: string };
+  if (!name?.trim() || !tel?.trim()) return res.status(400).json({ error: 'name and tel required' });
+  const ok = await createContact(name.trim(), tel.trim());
+  if (!ok) return res.status(502).json({ error: 'failed to create contact card' });
+  void syncContacts(); // refresh the local index in the background
+  res.json({ ok: true });
 });
 
 /** A DAV contact's name + all their numbers (for channel switching). */

@@ -136,7 +136,8 @@ export async function ingest(
   const inserted = insertMessage(
     stored,
     source === 'import' ? 'poll' : source,
-    media ? undefined : msg.mediaPending
+    media ? undefined : msg.mediaPending,
+    msg.vcard
   );
   if (inserted) {
     broadcast({ type: 'message', data: { ...stored } });
@@ -193,7 +194,10 @@ export function ingestBatch(messages: NormalizedMessage[]): number {
         forwardedFrom: msg.forwardedFrom ?? null,
       };
       if (isDuplicateMessage(chat.id, storedMsg.body, storedMsg.ts)) continue;
-      if (insertMessage(storedMsg, 'poll', msg.media ? undefined : msg.mediaPending)) stored++;
+      if (
+        insertMessage(storedMsg, 'poll', msg.media ? undefined : msg.mediaPending, msg.vcard)
+      )
+        stored++;
     }
   });
   tx(messages);

@@ -59,6 +59,8 @@ export interface Message {
   deleted?: number;
   /** Outgoing receipt status: 'sent' | 'delivered' | 'read' (providers that support it). */
   receipt?: string;
+  /** A shared contact card (parsed from the stored vCard at query time). */
+  contactCard?: { name: string; tel: string | null } | null;
   reactions?: ReactionRef[];
   /** Hydrated quote preview (resolved at query time). */
   quoted?: {

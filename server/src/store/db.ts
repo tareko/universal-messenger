@@ -207,6 +207,12 @@ export function initDb() {
   } catch {
     /* column exists */
   }
+  // Received contact cards (vCard text of a shared contact).
+  try {
+    db.exec('ALTER TABLE messages ADD COLUMN vcard TEXT');
+  } catch {
+    /* column exists */
+  }
   return db;
 }
 
@@ -513,10 +519,20 @@ function rowToMessage(r: Record<string, unknown>): Message {
     mediaPending: Boolean(r.media_pending),
     deleted: Number(r.deleted ?? 0),
     receipt: r.receipt ? String(r.receipt) : undefined,
+    contactCard: parseContactCard(r.vcard),
     quotedId: r.quoted_id ? String(r.quoted_id) : null,
     forwardedFrom: r.forwarded_from ? String(r.forwarded_from) : null,
     edited: Number(r.edited ?? 0),
   };
+}
+
+/** Parse a stored vCard into {name, tel} for display. */
+function parseContactCard(raw: unknown): { name: string; tel: string | null } | null {
+  if (typeof raw !== 'string' || !raw) return null;
+  const fn = raw.match(/FN:(.+)/)?.[1]?.trim();
+  const tel = raw.match(/TEL[^:]*:(.+)/)?.[1]?.trim();
+  if (!fn && !tel) return null;
+  return { name: fn ?? tel ?? 'Contact', tel: tel ?? null };
 }
 
 export function messageExists(id: string): boolean {
@@ -564,12 +580,13 @@ export function dedupMessages(): number {
 export function insertMessage(
   msg: Message,
   source: 'poll' | 'webhook' | 'send' = 'poll',
-  mediaPending?: string
+  mediaPending?: string,
+  vcard?: string
 ): boolean {
   const res = getDb()
     .prepare(
-      `INSERT INTO messages(id, chat_id, account_id, ts, date, outgoing, sender, body, media, quoted_id, forwarded_from, read, source, carrier_status, media_pending)
-       VALUES(@id, @chatId, @accountId, @ts, @date, @outgoing, @sender, @body, @media, @quotedId, @forwardedFrom, @read, @source, @carrierStatus, @mediaPending)
+      `INSERT INTO messages(id, chat_id, account_id, ts, date, outgoing, sender, body, media, quoted_id, forwarded_from, read, source, carrier_status, media_pending, vcard)
+       VALUES(@id, @chatId, @accountId, @ts, @date, @outgoing, @sender, @body, @media, @quotedId, @forwardedFrom, @read, @source, @carrierStatus, @mediaPending, @vcard)
        ON CONFLICT(id) DO NOTHING`
     )
     .run({
@@ -588,6 +605,7 @@ export function insertMessage(
       source,
       carrierStatus: msg.carrierStatus ?? '',
       mediaPending: mediaPending ?? null,
+      vcard: vcard ?? null,
     });
   return res.changes > 0;
 }

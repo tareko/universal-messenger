@@ -159,12 +159,42 @@ export function getCarddavStatus(): string {
   return lastStatus;
 }
 
+/** Create a new contact card (FN + TEL) in the synced address book. */
+export async function createContact(name: string, tel: string): Promise<boolean> {
+  if (!config.nextcloud.url || !config.nextcloud.username || !config.nextcloud.password) return false;
+  try {
+    const books = await discoverAddressBooks();
+    const book = books[0];
+    if (!book) return false;
+    const uid = crypto.randomUUID();
+    const vcard = [
+      'BEGIN:VCARD',
+      'VERSION:3.0',
+      `UID:${uid}`,
+      `FN:${name}`,
+      `N:;${name};;;`,
+      `TEL;TYPE=CELL:${tel}`,
+      `REV:${new Date().toISOString()}`,
+      'END:VCARD',
+    ].join('\r\n');
+    const res = await dav(`${book}${uid}.vcf`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'text/vcard; charset=utf-8' },
+      body: vcard,
+    });
+    return res.status === 201 || res.status === 204;
+  } catch (e) {
+    console.error('[carddav] createContact failed:', (e as Error).message);
+    return false;
+  }
+}
+
+
 /**
  * Write a PHOTO into a contact's vCard (Nextcloud CardDAV).
  * Finds the contact by phone number, replaces/inserts PHOTO, PUTs it back.
  */
-export async function updateContactPhoto(
-  tel: string,
+export async function updateContactPhoto(  tel: string,
   imageData: Buffer,
   contentType: string
 ): Promise<boolean> {

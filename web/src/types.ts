@@ -52,6 +52,8 @@ export interface Message {
   deleted?: number;
   /** Outgoing receipt status: 'sent' | 'delivered' | 'read' (where supported). */
   receipt?: string;
+  /** A shared contact card (vCard). */
+  contactCard?: { name: string; tel: string | null } | null;
   reactions?: ReactionRef[];
   quoted?: {
     id: string;
