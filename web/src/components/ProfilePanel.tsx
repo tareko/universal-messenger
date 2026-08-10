@@ -58,6 +58,8 @@ export function ProfilePanel({
   const [onWhatsApp, setOnWhatsApp] = useState<boolean | null>(null);
   const [numbers, setNumbers] = useState<string[]>([]);
   const [taxonomy, setTaxonomy] = useState<Tag[]>([]);
+  const [newContactName, setNewContactName] = useState('');
+  const [contactCreated, setContactCreated] = useState(false);
   const [avatars, setAvatars] = useState<{ chatId: string; provider: string; url: string | null; uploading?: boolean; failed?: boolean }[]>([]);
   const [picked, setPicked] = useState(false);
   const [pickError, setPickError] = useState('');
@@ -69,7 +71,13 @@ export function ProfilePanel({
 
   useEffect(() => {
     void api.tags().then(setTaxonomy).catch(() => {});
-  }, []);
+    // Prefill the create-card name with the best display name we have.
+    if (!hasContactCard && isDm) {
+      setNewContactName(
+        chat.contactRaw && /[a-zA-Z]/.test(chat.contactRaw) ? chat.contactRaw : (chat.title ?? '')
+      );
+    }
+  }, [chat.id]);
 
   /** Refresh the displayed photo after pick/upload and bust the stale cache. */
   async function refreshDisplayedPhoto() {
@@ -112,6 +120,7 @@ export function ProfilePanel({
   const isDm = chat.type === 'dm';
   const account = accounts.find((a) => a.id === chat.accountId);
   const linkedChats = person ? memberChats : [chat];
+  const hasContactCard = Boolean(chat.name); // resolved from the DAV address book
   const muteKey = person ? `person:${person.id}` : chat.id;
   const defaultMuted = chat.type !== 'dm' && !chat.pinned;
   const muted =
@@ -238,6 +247,15 @@ export function ProfilePanel({
     return () => document.removeEventListener('paste', onPastePhoto);
   }, []);
 
+  async function createContactCard() {
+    const nm = newContactName.trim();
+    if (!nm || !chat.remoteId.startsWith('+')) return;
+    await run(async () => {
+      await api.addContact(nm, chat.remoteId);
+      setContactCreated(true);
+    });
+  }
+
   async function linkChat(chatId: string) {
     setAddQuery('');
     if (person) {
@@ -345,6 +363,31 @@ export function ProfilePanel({
             {onWhatsApp !== null && (
               <div className="profile-kv">
                 WhatsApp: {onWhatsApp ? '✓ registered' : 'not on WhatsApp'}
+              </div>
+            )}
+            {!hasContactCard && chat.remoteId.startsWith('+') && (
+              <div className="profile-new-contact">
+                {contactCreated ? (
+                  <div className="profile-avatar-picked">✓ Contact card created (syncing…)</div>
+                ) : (
+                  <>
+                    <p className="profile-hint">No contact card for this number yet.</p>
+                    <div className="profile-new-contact-row">
+                      <input
+                        placeholder="Contact name"
+                        value={newContactName}
+                        onChange={(e) => setNewContactName(e.target.value)}
+                      />
+                      <button
+                        className="dialog-cancel"
+                        disabled={busy || !newContactName.trim()}
+                        onClick={() => void createContactCard()}
+                      >
+                        Create card
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>
