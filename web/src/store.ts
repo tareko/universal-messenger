@@ -6,7 +6,7 @@ export function isPersonSelection(sel: string | null): boolean {
   return sel?.startsWith('person:') ?? false;
 }
 
-interface StoreState {
+export interface StoreState {
   status: AppStatus | null;
   sseStatus: 'connecting' | 'connected';
   accounts: Account[];
@@ -401,6 +401,8 @@ export const useStore = create<StoreState>((set, get) => ({
     try {
       const res = await api.sendMedia(targetChatId, body, file, contentType, filename);
       patchMessage(set, optId, { id: res.id || optId, status: 'sent' });
+      // Free the optimistic blob URL once the server echo takes over.
+      if (opt.media?.[0]?.url.startsWith('blob:')) URL.revokeObjectURL(opt.media[0].url);
     } catch (e) {
       patchMessage(set, optId, { status: 'failed', error: (e as Error).message });
       set({ error: (e as Error).message });

@@ -28,6 +28,16 @@ async function main() {
   app.use(cors());
   app.use(express.json());
 
+  // Slow-request probe: log any API call over 500ms (helps find stalls).
+  app.use((req, res, next) => {
+    const t0 = Date.now();
+    res.on('finish', () => {
+      const ms = Date.now() - t0;
+      if (ms > 500) console.log(`[slow] ${req.method} ${req.path} ${ms}ms`);
+    });
+    next();
+  });
+
   // API + SSE (SSE accepts ?token= since EventSource can't set headers)
   app.use('/api', api);
   app.use('/api', aiApi);

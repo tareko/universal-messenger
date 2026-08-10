@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
-import { useStore } from '../store';
-import type { Contact, Message } from '../types';
+import { useStore, type StoreState } from '../store';
+import type { Chat, Contact, Message, Person } from '../types';
 import { Avatar } from './Avatar';
 import { providerBadge } from './AccountSwitcher';
 import { formatTime } from './Thread';
@@ -13,7 +13,7 @@ interface SearchHit {
 }
 
 export function ChatList() {
-  const chats = useStore((s) => s.chats);
+  const allChats = useStore((s) => s.chats);
   const people = useStore((s) => s.people);
   const accounts = useStore((s) => s.accounts);
   const typing = useStore((s) => s.typing);
@@ -38,9 +38,9 @@ export function ChatList() {
   // page back via thread scroll). Show it only on the main tab when relevant.
   const showSmsBackfill =
     hasVoipMs && tab === 'chats' && (selectedAccount === 'all' || selectedAccount.startsWith('voipms:'));
-  const channelCount = chats.filter((c) => c.type === 'channel' && !c.hidden).length;
-  const groupCount = chats.filter((c) => c.type === 'group' && !c.hidden).length;
-  const hiddenCount = chats.filter((c) => c.hidden).length;
+  const channelCount = allChats.filter((c) => c.type === 'channel' && !c.hidden).length;
+  const groupCount = allChats.filter((c) => c.type === 'group' && !c.hidden).length;
+  const hiddenCount = allChats.filter((c) => c.hidden).length;
 
   useEffect(() => {
     const q = query.trim();
@@ -71,7 +71,7 @@ export function ChatList() {
   }, [query]);
 
   const filteredChats = useMemo(() => {
-    const byTab = chats.filter((c) => {
+    const byTab = allChats.filter((c) => {
       if (tab === 'hidden') return Boolean(c.hidden);
       if (c.hidden) return false; // hidden conversations leave the other tabs
       if (tab === 'channels') return c.type === 'channel';
@@ -94,33 +94,40 @@ export function ChatList() {
         (c.personId != null &&
           people.find((p) => p.id === c.personId)?.name.toLowerCase().includes(q))
     );
-  }, [chats, query, tab, people, tagFilter]);
+  }, [allChats, query, tab, people, tagFilter]);
 
   // Unique tags present across visible chats (for the filter chip row).
   const presentTags = useMemo(() => {
     const map = new Map<number, { id: number; name: string; color: string }>();
-    for (const c of chats) {
+    for (const c of allChats) {
       for (const t of c.tags ?? []) map.set(t.id, t);
     }
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
-  }, [chats]);
+  }, [allChats]);
 
   /** Person-grouped rows: linked chats collapse into one row per person. */
-  const displayRows = useMemo(() => {
-    interface Row {
-      selId: string;
-      name: string;
-      subtitle: string;
-      subtitleTyping: boolean;
-      ts: number;
-      unread: number;
-      badges: string[];
-      linked: boolean;
-      group?: boolean;
-      channel?: boolean;
-      pinned?: boolean;
-      tags?: { id: number; name: string; color: string }[];
-    }
+interface Row {
+  selId: string;
+  name: string;
+  subtitle: string;
+  subtitleTyping: boolean;
+  ts: number;
+  unread: number;
+  badges: string[];
+  linked: boolean;
+  group?: boolean;
+  channel?: boolean;
+  pinned?: boolean;
+  tags?: { id: number; name: string; color: string }[];
+}
+
+const displayRowsFn = (
+  filteredChats: Chat[],
+  allChats: Chat[],
+  people: Person[],
+  typing: StoreState['typing'],
+  selectedAccount: string
+): Row[] => {
     const rows: Row[] = [];
     const seenPeople = new Set<number>();
     for (const c of filteredChats) {
@@ -129,7 +136,7 @@ export function ChatList() {
         if (seenPeople.has(c.personId)) continue;
         seenPeople.add(c.personId);
         const person = people.find((p) => p.id === c.personId);
-        const members = chats.filter((x) => x.personId === c.personId);
+        const members = allChats.filter((x) => x.personId === c.personId);
         const latest = members.reduce((a, b) =>
           (b.lastMessage?.ts ?? b.ts) > (a.lastMessage?.ts ?? a.ts) ? b : a
         );
@@ -166,7 +173,12 @@ export function ChatList() {
       }
     }
     return rows.sort((a, b) => b.ts - a.ts);
-  }, [filteredChats, people, chats, typing, selectedAccount, chatSubtitle]);
+  };
+
+  const displayRows = useMemo(
+    () => displayRowsFn(filteredChats, allChats, people, typing, selectedAccount),
+    [filteredChats, people, allChats, typing, selectedAccount]
+  );
 
   function switchTab(t: 'chats' | 'groups' | 'channels' | 'hidden') {
     setTab(t);
@@ -175,7 +187,7 @@ export function ChatList() {
 
   const showingSearch = query.trim().length > 0;
 
-  function chatSubtitle(c: (typeof chats)[number]): { text: string; typing: boolean } {
+  function chatSubtitle(c: Chat): { text: string; typing: boolean } {
     const t = typing[c.id];
     if (t && t.expiresAt > Date.now()) {
       return { text: c.type === 'group' && t.name ? `${t.name} is typing…` : 'typing…', typing: true };
@@ -336,7 +348,7 @@ export function ChatList() {
           ))
         )}
 
-        {!showingSearch && chats.length === 0 && (
+        {!showingSearch && allChats.length === 0 && (
           <div className="empty-hint">No chats yet. Search a contact to start one.</div>
         )}
 
