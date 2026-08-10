@@ -1165,6 +1165,15 @@ export function getContactName(tel: string): string | null {
   return row?.name ?? null;
 }
 
+/** Insert/update a single contact (optimistic local rename before DAV sync). */
+export function upsertContact(tel: string, name: string, rawTel?: string): void {
+  getDb()
+    .prepare(
+      'INSERT INTO contacts(tel, name, raw_tel) VALUES(?, ?, ?) ON CONFLICT(tel) DO UPDATE SET name = excluded.name, raw_tel = excluded.raw_tel'
+    )
+    .run(tel, name, rawTel ?? tel);
+}
+
 export function searchContacts(query: string, limit = 50): Contact[] {
   const q = `%${query.replace(/[%_]/g, (m) => '\\' + m)}%`;
   const rows = getDb()

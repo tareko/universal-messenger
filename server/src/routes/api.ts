@@ -14,6 +14,7 @@ import {
   searchContacts,
   searchMessages,
   getContactName,
+  upsertContact,
   getKv,
   setKv,
   setChatPinned,
@@ -1072,6 +1073,9 @@ api.post('/contacts/add', async (req, res) => {
   if (!name?.trim() || !tel?.trim()) return res.status(400).json({ error: 'name and tel required' });
   const ok = await createContact(name.trim(), tel.trim());
   if (!ok) return res.status(502).json({ error: 'failed to create contact card' });
+  // Optimistic local rename while the DAV sync catches up.
+  upsertContact(tel.trim(), name.trim());
+  broadcast({ type: 'chats-updated' });
   void syncContacts(); // refresh the local index in the background
   res.json({ ok: true });
 });
