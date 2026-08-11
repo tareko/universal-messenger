@@ -465,7 +465,7 @@ export class SignalProvider implements Provider {
         ts,
         outgoing: true,
         body: payload.body,
-        media: m ? [saveUploadedMedia(Buffer.from(m.data, 'base64'), m.contentType)] : undefined,
+        media: m ? [saveUploadedMedia(Buffer.from(m.data, 'base64'), m.contentType, m.name)] : undefined,
         quotedRemoteId: payload.quotedId
           ? payload.quotedId.slice(`${this.accountId}:`.length)
           : undefined,

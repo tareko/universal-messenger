@@ -582,7 +582,7 @@ export class TelegramProvider implements Provider {
           ts: Date.now(),
           outgoing: true,
           body: payload.body,
-          media: [saveUploadedMedia(buf, m.contentType)],
+          media: [saveUploadedMedia(buf, m.contentType, m.name)],
           quotedRemoteId: payload.quotedId
             ? payload.quotedId.slice(`${this.accountId}:`.length)
             : undefined,

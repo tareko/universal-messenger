@@ -1076,7 +1076,7 @@ export class WhatsAppProvider implements Provider {
         ts: Date.now(),
         outgoing: true,
         body: payload.body,
-        media: m ? [saveUploadedMedia(Buffer.from(m.data, 'base64'), m.contentType)] : undefined,
+        media: m ? [saveUploadedMedia(Buffer.from(m.data, 'base64'), m.contentType, m.name)] : undefined,
         quotedRemoteId: quotedTarget
           ? quotedTarget.id.slice(`${this.accountId}:`.length)
           : undefined,

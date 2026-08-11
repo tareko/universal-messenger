@@ -94,12 +94,12 @@ export function getAvatarPath(file: string): string {
 }
 
 /** Save an uploaded attachment buffer (outgoing media) and return its local ref. */
-export function saveUploadedMedia(buf: Buffer, contentType: string): MediaRef {
+export function saveUploadedMedia(buf: Buffer, contentType: string, name?: string): MediaRef {
   const ct = contentType || 'image/jpeg';
   const hash = createHash('sha1').update(buf).digest('hex').slice(0, 20);
   const file = `${hash}.${extFor(ct)}`;
   writeFileSync(resolve(mediaDir, file), buf);
-  return { url: `/api/media/${file}`, contentType: ct };
+  return { url: `/api/media/${file}`, contentType: ct, ...(name ? { name } : {}) };
 }
 
 /** Save a provider-downloaded buffer and return its local ref. */

@@ -811,7 +811,7 @@ export class MattermostProvider implements Provider {
         ts: post.create_at || Date.now(),
         outgoing: true,
         body: payload.body,
-        media: m ? [saveUploadedMedia(Buffer.from(m.data, 'base64'), m.contentType)] : undefined,
+        media: m ? [saveUploadedMedia(Buffer.from(m.data, 'base64'), m.contentType, m.name)] : undefined,
         quotedRemoteId: usedRootId,
         forwardedFrom: payload.forwardedFrom,
       },

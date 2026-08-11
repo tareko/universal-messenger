@@ -55,7 +55,7 @@ export class VoipMsProvider implements Provider {
     let prebuilt;
     if (media.length > 0) {
       id = await sendMMS(did, dst, body, media);
-      prebuilt = media.map((m) => saveUploadedMedia(Buffer.from(m.data, 'base64'), m.contentType));
+      prebuilt = media.map((m) => saveUploadedMedia(Buffer.from(m.data, 'base64'), m.contentType, m.name));
     } else if (tooLong) {
       id = await sendMMS(did, dst, body, []);
     } else {
