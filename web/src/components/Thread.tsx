@@ -266,6 +266,8 @@ export function Thread() {
         // Initial positioning done — the divider may now be cleared at bottom.
         canClearUnreadRef.current = true;
         setPositioned(true);
+        const t0 = (window as unknown as { __umChatT0?: number }).__umChatT0;
+        if (t0) console.log(`[um] chat open → visible: ${Math.round(performance.now() - t0)}ms (${messages.length} msgs)`);
       }
       return;
     }
@@ -274,6 +276,8 @@ export function Thread() {
       pendingInitialScroll.current = false;
       canClearUnreadRef.current = true;
       setPositioned(true);
+      const t0 = (window as unknown as { __umChatT0?: number }).__umChatT0;
+      if (t0) console.log(`[um] chat open → visible (empty): ${Math.round(performance.now() - t0)}ms`);
       return;
     }
     // Follow new content ONLY when the user is parked at the bottom (set by

@@ -133,6 +133,7 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   selectChat: async (chatId: string) => {
+    (window as unknown as { __umChatT0?: number }).__umChatT0 = performance.now();
     // Capture the unread boundary BEFORE markRead zeroes it (summed across
     // member chats for a linked person), for the unread divider.
     let unread: number;
@@ -240,8 +241,11 @@ export const useStore = create<StoreState>((set, get) => ({
     const sel = get().selectedChat;
     if (!sel) return;
     try {
+      const fetchT0 = performance.now();
       const ids = memberChatIds(get());
       const pages = await Promise.all(ids.map((id) => api.messages(id)));
+      const fetchMs = performance.now() - fetchT0;
+      if (fetchMs > 300) console.log(`[um] message fetch slow: ${Math.round(fetchMs)}ms (${ids.length} chats)`);
       // Stale-response guard: user switched chats while we were fetching.
       if (get().selectedChat !== sel) return;
       const { messages } = get();
