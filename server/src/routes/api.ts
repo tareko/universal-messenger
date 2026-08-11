@@ -807,16 +807,23 @@ api.get('/avatar/:chatId', async (req, res) => {
     }
 
     // Kick the provider fetch in the background and answer immediately.
+    // Only a SUCCESS overwrites the cache — failures leave any existing
+    // entry intact (a transient error must never wipe a working photo).
     const provider = providerForAccount(chat.accountId);
     if (provider?.fetchAvatar && provider.status() === 'open' && !avatarInflight.has(chatId)) {
       avatarInflight.add(chatId);
       void (async () => {
         try {
           const avatar = await provider.fetchAvatar!(chat);
-          const ref = avatar ? saveAvatar(chatId, avatar.data, avatar.contentType) : null;
-          setKv(key, JSON.stringify({ url: ref?.url ?? null, ts: Date.now() }));
+          if (avatar) {
+            const ref = saveAvatar(chatId, avatar.data, avatar.contentType);
+            setKv(key, JSON.stringify({ url: ref.url, ts: Date.now() }));
+          } else if (!cached) {
+            // No photo available and nothing cached — negative-cache briefly.
+            setKv(key, JSON.stringify({ url: null, ts: Date.now() }));
+          }
         } catch {
-          setKv(key, JSON.stringify({ url: null, ts: Date.now() }));
+          /* keep the existing cache entry */
         } finally {
           avatarInflight.delete(chatId);
         }
