@@ -766,6 +766,7 @@ api.get('/media/:file', (req, res) => {
   const path = getMediaPath(file);
   if (!existsSync(path)) return res.status(404).send('not found');
   res.setHeader('Content-Type', mediaContentType(file));
+  // Content-hashed filename = safe to treat as immutable.
   res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
   res.sendFile(path);
 });
@@ -776,7 +777,8 @@ api.get('/media/avatars/:file', (req, res) => {
   const path = getAvatarPath(file);
   if (!existsSync(path)) return res.status(404).send('not found');
   res.setHeader('Content-Type', mediaContentType(file));
-  res.setHeader('Cache-Control', 'private, max-age=604800'); // 7 days, matches kv freshness
+  // Content-hashed filename = safe to treat as immutable.
+  res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
   res.sendFile(path);
 });
 

@@ -4,9 +4,26 @@ import { useStore } from '../store';
 
 const cache = new Map<string, string | null>();
 
+// Persist across reloads so photos render instantly with no fetch at all.
+try {
+  const saved = localStorage.getItem('um-avatars');
+  if (saved) for (const [k, v] of JSON.parse(saved) as [string, string][]) cache.set(k, v);
+} catch {
+  /* ignore */
+}
+
+function persistCache(): void {
+  try {
+    localStorage.setItem('um-avatars', JSON.stringify([...cache].slice(-800)));
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Prime the avatar cache with a fresh URL (after pick/upload). */
 export function primeAvatarCache(chatId: string, url: string): void {
   cache.set(chatId, url);
+  persistCache();
   useStore.getState().bumpAvatarVersion();
 }
 
@@ -25,7 +42,10 @@ function useAvatarUrl(chatId?: string): string | null {
         .then((r) => {
           if (!active) return;
           // Only successful fetches are cached — misses retry on next mount.
-          if (r.url) cache.set(chatId, r.url);
+          if (r.url) {
+            cache.set(chatId, r.url);
+            persistCache();
+          }
           setUrl(r.url);
           // Server is fetching in the background (or provider still connecting):
           // retry a few times until it lands.
