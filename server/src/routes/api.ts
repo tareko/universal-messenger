@@ -781,9 +781,13 @@ api.get('/media/avatars/:file', (req, res) => {
 });
 
 /**
- * Avatar for a chat (lazy: fetches from the provider on first request,
- * caches for a week, negative-caches misses for a day).
+ * Avatar for a chat. Serves the cache if fresh; otherwise kicks a BACKGROUND
+ * provider fetch and answers immediately ({retry: true}) so slow provider
+ * lookups (WhatsApp profilePictureUrl can take 16s) never occupy a browser
+ * connection slot and stall everything else.
  */
+const avatarInflight = new Set<string>();
+
 api.get('/avatar/:chatId', async (req, res) => {
   try {
     const chatId = String(req.params.chatId);
@@ -800,16 +804,23 @@ api.get('/avatar/:chatId', async (req, res) => {
       if (Date.now() - ts < freshFor) return res.json({ url });
     }
 
+    // Kick the provider fetch in the background and answer immediately.
     const provider = providerForAccount(chat.accountId);
-    // Provider not connected yet (boot/reconnect window): don't cache a
-    // false miss — tell the client to retry shortly.
-    if (provider?.fetchAvatar && provider.status() !== 'open') {
-      return res.json({ url: null, retry: true });
+    if (provider?.fetchAvatar && provider.status() === 'open' && !avatarInflight.has(chatId)) {
+      avatarInflight.add(chatId);
+      void (async () => {
+        try {
+          const avatar = await provider.fetchAvatar!(chat);
+          const ref = avatar ? saveAvatar(chatId, avatar.data, avatar.contentType) : null;
+          setKv(key, JSON.stringify({ url: ref?.url ?? null, ts: Date.now() }));
+        } catch {
+          setKv(key, JSON.stringify({ url: null, ts: Date.now() }));
+        } finally {
+          avatarInflight.delete(chatId);
+        }
+      })();
     }
-    const avatar = provider?.fetchAvatar ? await provider.fetchAvatar(chat) : null;
-    const ref = avatar ? saveAvatar(chatId, avatar.data, avatar.contentType) : null;
-    setKv(key, JSON.stringify({ url: ref?.url ?? null, ts: Date.now() }));
-    res.json({ url: ref?.url ?? null });
+    res.json({ url: null, retry: true });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }

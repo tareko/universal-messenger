@@ -18,6 +18,7 @@ function useAvatarUrl(chatId?: string): string | null {
     setUrl(chatId ? (cache.get(chatId) ?? null) : null);
     if (!chatId || cache.has(chatId)) return;
     let active = true;
+    let attempts = 0;
     const fetchOnce = () => {
       void api
         .avatar(chatId)
@@ -26,8 +27,12 @@ function useAvatarUrl(chatId?: string): string | null {
           // Only successful fetches are cached — misses retry on next mount.
           if (r.url) cache.set(chatId, r.url);
           setUrl(r.url);
-          // Provider was mid-connect: retry once shortly.
-          if (r.retry && active) setTimeout(() => active && fetchOnce(), 15_000);
+          // Server is fetching in the background (or provider still connecting):
+          // retry a few times until it lands.
+          if (r.retry && active && attempts < 3) {
+            attempts++;
+            setTimeout(() => active && fetchOnce(), 12_000);
+          }
         })
         .catch(() => {
           /* retry on next mount */
