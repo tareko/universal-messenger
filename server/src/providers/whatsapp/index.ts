@@ -39,7 +39,7 @@ import {
   recipientCount,
   removeReactions,
   replaceChatParticipants,
-  rewriteBodyFragment,
+  rewriteMentionDigits,
   rewriteSender,
   setAccountStatus,
   setChatEphemeral,
@@ -555,19 +555,26 @@ export class WhatsAppProvider implements Provider {
   }
 
   /**
-   * Replace WhatsApp's raw `@<number>` mentions with `@Name` using our names
-   * table + CardDAV. The mention digits in the text match the jid's user part
-   * (which may itself be a lid, so resolve those too).
+   * Replace WhatsApp's raw `@<number>` mentions with `@Name` using everything
+   * we know. The mention digits in the text match the jid's user part (which
+   * may itself be a lid, so resolve those too). Replacement is word-bounded —
+   * a bare split/join mangles overlapping numbers ("@1708" inside "@17089…").
    */
   private async resolveMentions(body: string, ctx: proto.IContextInfo | null): Promise<string> {
     if (!body.includes('@') || !ctx?.mentionedJid?.length) return body;
     let out = body;
+    const seen = new Set<string>();
     for (const jid of ctx.mentionedJid) {
       if (!jid) continue;
       const user = jid.split('@')[0];
+      if (!user || user.length < 4 || seen.has(user)) continue;
+      seen.add(user);
       const phone = await this.phoneFromJid(jid);
       const name = getName(phone) ?? getName(user);
-      if (name) out = out.split(`@${user}`).join(`@${name}`);
+      if (!name || name === user) continue;
+      // Only replace the exact @<digits> token (never inside a longer number).
+      const re = new RegExp(`@${user.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![0-9])`, 'g');
+      out = out.replace(re, `@${name}`);
     }
     return out;
   }
@@ -823,7 +830,7 @@ export class WhatsAppProvider implements Provider {
         const resolved = await this.phoneFromJid(`${digits}@lid`);
         const phone = resolved.endsWith('@lid') ? `+${digits}` : resolved;
         const name = getName(phone) ?? getName(digits);
-        if (name) rewriteBodyFragment(`@${digits}`, `@${name}`);
+        if (name) rewriteMentionDigits(digits, name);
       }
 
       if (n) {

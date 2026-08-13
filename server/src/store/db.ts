@@ -269,6 +269,24 @@ export function rewriteBodyFragment(from: string, to: string): number {
   return res.changes;
 }
 
+/** Rewrite @<digits> mentions to @Name in stored bodies, word-bounded. */
+export function rewriteMentionDigits(digits: string, name: string): number {
+  const rows = getDb()
+    .prepare('SELECT id, body FROM messages WHERE body LIKE ?')
+    .all(`%@${digits}%`) as { id: string; body: string }[];
+  const re = new RegExp(`@${digits.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![0-9])`, 'g');
+  const upd = getDb().prepare('UPDATE messages SET body = ? WHERE id = ?');
+  let n = 0;
+  for (const row of rows) {
+    const next = row.body.replace(re, `@${name}`);
+    if (next !== row.body) {
+      upd.run(next, row.id);
+      n++;
+    }
+  }
+  return n;
+}
+
 // ---------- accounts ----------
 export function upsertAccount(a: { id: string; provider: string; label: string; status?: string }): void {
   getDb()
