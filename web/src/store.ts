@@ -490,9 +490,13 @@ export const useStore = create<StoreState>((set, get) => ({
   submitEdit: async (text: string) => {
     const { editing } = get();
     if (!editing || !text.trim()) return;
+    const newBody = text.trim();
+    // Optimistic: update the bubble immediately; the SSE message-updated
+    // reconciles with the provider result.
+    patchMessage(set, editing.id, { body: newBody, edited: 1 });
+    set({ editing: null });
     try {
-      await api.editMessage(editing.id, text.trim());
-      set({ editing: null });
+      await api.editMessage(editing.id, newBody);
     } catch (e) {
       set({ error: (e as Error).message });
     }
@@ -584,7 +588,8 @@ export const useStore = create<StoreState>((set, get) => ({
 
   onMessageUpdated: (msg) => {
     const { selectedChat, messages } = get();
-    if (msg.chatId === selectedChat) {
+    // Member-chat aware: works for person selections too.
+    if (selectedChat && memberChatIds(get()).includes(msg.chatId)) {
       const idx = messages.findIndex((m) => m.id === msg.id);
       if (idx >= 0) {
         const next = [...messages];
