@@ -75,6 +75,7 @@ private fun providerColor(provider: String): Color = when (provider) {
 @Composable
 fun ChatListScreen(store: AppStore) {
     val state by store.state.collectAsStateWithLifecycle()
+    var showSettings by remember { mutableStateOf(false) }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -89,7 +90,7 @@ fun ChatListScreen(store: AppStore) {
                                 CircleShape,
                             )
                     )
-                    IconButton(onClick = { /* settings */ }) {
+                    IconButton(onClick = { showSettings = true }) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
                 },
@@ -103,6 +104,12 @@ fun ChatListScreen(store: AppStore) {
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+                Text(
+                    "Check settings (gear icon)",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
                 )
             }
             if (state.loading) {
@@ -119,6 +126,9 @@ fun ChatListScreen(store: AppStore) {
                 }
             }
         }
+    }
+    if (showSettings) {
+        ConnectionDialog(store) { showSettings = false }
     }
 }
 

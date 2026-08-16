@@ -83,7 +83,10 @@ private fun SetupScreen(store: AppStore) {
         Spacer(Modifier.height(24.dp))
         OutlinedTextField(
             value = url,
-            onValueChange = { url = it },
+            onValueChange = {
+                url = it
+                result = null
+            },
             label = { Text("Server URL") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
@@ -91,7 +94,10 @@ private fun SetupScreen(store: AppStore) {
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = token,
-            onValueChange = { token = it },
+            onValueChange = {
+                token = it
+                result = null
+            },
             label = { Text("API token (optional)") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
@@ -102,7 +108,7 @@ private fun SetupScreen(store: AppStore) {
             Text(if (checking) "Checking…" else "Test connection")
         }
         Spacer(Modifier.height(8.dp))
-        Button(onClick = { store.saveConnection(url, token) }, enabled = url.isNotBlank() && result == "Connected") {
+        Button(onClick = { store.saveConnection(url, token) }, enabled = url.isNotBlank()) {
             Text("Save & connect")
         }
         result?.let {
