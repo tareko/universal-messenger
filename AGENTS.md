@@ -14,6 +14,17 @@ npm run import-voipms -- --db /path/to/old/app.db
 docker compose up -d --build
 ```
 
+Android client (`android/`, Kotlin + Compose, client-server against the same API — see `docs/ANDROID.md`):
+
+```sh
+cd android
+./gradlew :app:assembleDebug     # → app/build/outputs/apk/debug/app-debug.apk
+```
+
+- **Java pin**: `android/gradle.properties` sets `org.gradle.java.home` to JDK 21 — system default JDK 25 breaks AGP ("What went wrong: 25.0.3"). Don't remove.
+- Default server URL on first run is `http://10.0.2.2:8317` (emulator → host loopback).
+- `android/local.properties` (sdk.dir) is gitignored — it points at `~/Android/Sdk`.
+
 Deploy: `deploy/universal-messenger.service` (systemd), `deploy/Caddyfile.example`. Rollback tag: `v0.1.0`.
 
 ## ⚠️ Process management (biggest recurring foot-gun)
