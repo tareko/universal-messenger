@@ -77,7 +77,8 @@ data class Chat(
     val hidden: Int? = null,
     val translateEnabled: Int? = null,
     val suggestEnabled: Int? = null,
-    val personId: String? = null,
+    // Server sends the people-table row id (number), not a string.
+    val personId: Long? = null,
     val tags: List<Tag> = emptyList(),
 ) {
     val displayName: String get() = title ?: name ?: contactRaw.ifBlank { id }
