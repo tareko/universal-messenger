@@ -31,7 +31,7 @@ Deploy: `deploy/universal-messenger.service` (systemd), `deploy/Caddyfile.exampl
 
 - **`pkill -f "src/index"` kills your own shell command** if the pattern appears in the same bash line — separate kill and start into different tool calls.
 - Background servers started with `(setsid nohup npx tsx server/src/index.ts &)` **die when the shell times out**. Restart after every long-running command; verify with `curl -s localhost:8317/api/status`.
-- Check what's actually serving before debugging "my change didn't apply": `ss -tlnp | grep 8317` and `ps` for duplicate instances (two sockets on one WhatsApp session = flapping reconnects).
+- Check what's actually serving before debugging "my change didn't apply": `ss -tlnp | grep 8317` and `ps` for duplicate instances (two sockets on one WhatsApp session = flapping reconnects). **Check the serving pid's start date** (`ps -o pid,lstart -p <pid>`) — a zombie from days ago can hold the port while every "restart" dies silently; you'll be running old code and WA flapping (428/408) will replay events without timestamps (messages get misdated to arrival time).
 - `npm run build:web` output can be swallowed by chained commands; check `dist/assets/index-*.js` exists and web typecheck separately.
 
 ## Frontend cache reality
