@@ -79,7 +79,10 @@ export function Thread() {
     const chatId = selectedChat;
     const fingerprint = summaryFingerprint(chatId);
     const cached = summaryCache.current.get(chatId);
-    if (!force && cached && !cached.dismissed && cached.fingerprint === fingerprint) {
+    // Manual ✨ reuses the old summary when nothing changed — even if it was
+    // dismissed. (dismissed only blocks auto-restore on chat switch)
+    if (!force && cached && cached.fingerprint === fingerprint) {
+      summaryCache.current.set(chatId, { ...cached, dismissed: false });
       setSummary({ chatId, text: cached.text, streaming: false, fingerprint });
       return; // nothing new — show the last one
     }
