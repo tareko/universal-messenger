@@ -435,25 +435,14 @@ export function Thread() {
           </div>
         </div>
         {aiEnabled && (
-          <>
-            {summary && !summary.hidden && !summary.streaming && (
-              <button
-                className="tool-btn"
-                title="Re-run the summary (even if nothing changed)"
-                onClick={() => void summarize(true)}
-              >
-                🔄
-              </button>
-            )}
-            <button
-              className="tool-btn"
-              title="Summarize this chat (AI)"
-              disabled={summary?.streaming}
-              onClick={() => void summarize(false)}
-            >
-              {summary?.streaming ? '…' : '✨'}
-            </button>
-          </>
+          <button
+            className="tool-btn"
+            title="Summarize this chat (AI)"
+            disabled={summary?.streaming}
+            onClick={() => void summarize(false)}
+          >
+            {summary?.streaming ? '…' : '✨'}
+          </button>
         )}
       </div>
 
@@ -461,13 +450,23 @@ export function Thread() {
         <div className="ai-summary">
           <div className="ai-summary-head">
             <span>✨ AI summary{summary.streaming ? ' (writing…)' : ''}</span>
-            <button
-              className="attach-remove"
-              title="Hide summary"
-              onClick={() => setSummary((s) => (s ? { ...s, hidden: true } : s))}
-            >
-              ✕
-            </button>
+            <span className="ai-suggestions-actions">
+              <button
+                className="attach-remove"
+                title="Re-run the summary (even if nothing changed)"
+                disabled={summary.streaming}
+                onClick={() => void summarize(true)}
+              >
+                ↻
+              </button>
+              <button
+                className="attach-remove"
+                title="Hide summary"
+                onClick={() => setSummary((s) => (s ? { ...s, hidden: true } : s))}
+              >
+                ✕
+              </button>
+            </span>
           </div>
           <div className="ai-summary-body" dir="auto">
             <Formatted text={summary.text || '…'} provider={account?.provider ?? ''} />
