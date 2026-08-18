@@ -39,28 +39,57 @@ export function Thread() {
   );
   const [showProfile, setShowProfile] = useState(false);
   const [summary, setSummary] = useState<{
+    chatId: string;
     text: string;
     streaming: boolean;
     fingerprint: string;
-    hidden: boolean;
   } | null>(null);
   const aiEnabled = useStore((s) => s.status?.ai?.enabled ?? false);
+
+  // Per-chat summary memory: survives chat switches within the session.
+  // dismissed = user closed it here → don't auto-restore on return.
+  const summaryCache = useRef(new Map<string, { text: string; fingerprint: string; dismissed: boolean }>());
+
+  /** A summary is current when the chat's message list hasn't changed since it
+   *  was generated (count + last ts). */
+  function summaryFingerprint(chatId: string): string {
+    const msgs = useStore.getState().messages;
+    return `${chatId}:${msgs.length}:${msgs[msgs.length - 1]?.ts ?? 0}`;
+  }
+
+  // Chat switch: hide the old chat's summary; auto-restore this chat's last
+  // summary if it wasn't dismissed and nothing has changed since.
+  useEffect(() => {
+    if (!selectedChat) {
+      setSummary(null);
+      return;
+    }
+    const cached = summaryCache.current.get(selectedChat);
+    if (cached && !cached.dismissed && cached.fingerprint === summaryFingerprint(selectedChat)) {
+      setSummary({ chatId: selectedChat, text: cached.text, streaming: false, fingerprint: cached.fingerprint });
+    } else {
+      setSummary(null);
+    }
+  }, [selectedChat]);
 
   /** Stream an AI summary of the current chat into the panel. Without force,
    *  an unchanged chat (same last message) just re-shows the last summary. */
   async function summarize(force = false) {
     if (!selectedChat || summary?.streaming) return;
-    const fingerprint = `${selectedChat}:${messages.length}:${messages[messages.length - 1]?.ts ?? 0}`;
-    if (!force && summary && summary.fingerprint === fingerprint) {
-      setSummary({ ...summary, hidden: false }); // nothing new — show the last one
-      return;
+    const chatId = selectedChat;
+    const fingerprint = summaryFingerprint(chatId);
+    const cached = summaryCache.current.get(chatId);
+    if (!force && cached && !cached.dismissed && cached.fingerprint === fingerprint) {
+      setSummary({ chatId, text: cached.text, streaming: false, fingerprint });
+      return; // nothing new — show the last one
     }
-    setSummary({ text: '', streaming: true, fingerprint, hidden: false });
+    setSummary({ chatId, text: '', streaming: true, fingerprint });
+    let full = '';
     try {
       const res = await fetch('/api/ai/summary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chatId: selectedChat }),
+        body: JSON.stringify({ chatId }),
       });
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
       const reader = res.body.getReader();
@@ -69,6 +98,11 @@ export function Thread() {
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
+        // Left the chat mid-stream: cancel, drop the partial, don't cache.
+        if (useStore.getState().selectedChat !== chatId) {
+          void reader.cancel();
+          return;
+        }
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
         buffer = lines.pop() ?? '';
@@ -78,18 +112,23 @@ export function Thread() {
             const payload = JSON.parse(line.slice(5).trim()) as { delta?: string; error?: string };
             if (payload.error) throw new Error(payload.error);
             if (payload.delta) {
-              setSummary((s) => (s ? { ...s, text: s.text + payload.delta } : s));
+              full += payload.delta;
+              setSummary((s) => (s && s.chatId === chatId ? { ...s, text: s.text + payload.delta } : s));
             }
           } catch (e) {
             if (e instanceof Error && e.message !== 'Unexpected end of JSON input') throw e;
           }
         }
       }
-      setSummary((s) => (s ? { ...s, streaming: false } : s));
+      summaryCache.current.set(chatId, { text: full, fingerprint, dismissed: false });
+      setSummary((s) => (s && s.chatId === chatId ? { ...s, streaming: false } : s));
     } catch (e) {
-      // Failed runs keep fingerprint '' so the next click retries instead of
-      // caching an error message.
-      setSummary({ text: `Summary failed: ${(e as Error).message}`, streaming: false, fingerprint: '', hidden: false });
+      // Failed runs aren't cached — the next click retries.
+      setSummary((s) =>
+        s && s.chatId === chatId
+          ? { ...s, text: `Summary failed: ${(e as Error).message}`, streaming: false, fingerprint: '' }
+          : s
+      );
     }
   }
   const messages = useStore((s) => s.messages);
@@ -438,15 +477,15 @@ export function Thread() {
           <button
             className="tool-btn"
             title="Summarize this chat (AI)"
-            disabled={summary?.streaming}
+            disabled={summary?.chatId === selectedChat && summary.streaming}
             onClick={() => void summarize(false)}
           >
-            {summary?.streaming ? '…' : '✨'}
+            {summary?.chatId === selectedChat && summary.streaming ? '…' : '✨'}
           </button>
         )}
       </div>
 
-      {summary && !summary.hidden && (
+      {summary && summary.chatId === selectedChat && (
         <div className="ai-summary">
           <div className="ai-summary-head">
             <span>✨ AI summary{summary.streaming ? ' (writing…)' : ''}</span>
@@ -462,7 +501,14 @@ export function Thread() {
               <button
                 className="attach-remove"
                 title="Hide summary"
-                onClick={() => setSummary((s) => (s ? { ...s, hidden: true } : s))}
+                onClick={() => {
+                  summaryCache.current.set(selectedChat, {
+                    text: summary.text,
+                    fingerprint: summary.fingerprint,
+                    dismissed: true,
+                  });
+                  setSummary(null);
+                }}
               >
                 ✕
               </button>
