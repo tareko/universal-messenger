@@ -38,13 +38,24 @@ export function Thread() {
     [person, chats]
   );
   const [showProfile, setShowProfile] = useState(false);
-  const [summary, setSummary] = useState<{ text: string; streaming: boolean } | null>(null);
+  const [summary, setSummary] = useState<{
+    text: string;
+    streaming: boolean;
+    fingerprint: string;
+    hidden: boolean;
+  } | null>(null);
   const aiEnabled = useStore((s) => s.status?.ai?.enabled ?? false);
 
-  /** Stream an AI summary of the current chat into the panel. */
-  async function summarize() {
+  /** Stream an AI summary of the current chat into the panel. Without force,
+   *  an unchanged chat (same last message) just re-shows the last summary. */
+  async function summarize(force = false) {
     if (!selectedChat || summary?.streaming) return;
-    setSummary({ text: '', streaming: true });
+    const fingerprint = `${selectedChat}:${messages.length}:${messages[messages.length - 1]?.ts ?? 0}`;
+    if (!force && summary && summary.fingerprint === fingerprint) {
+      setSummary({ ...summary, hidden: false }); // nothing new — show the last one
+      return;
+    }
+    setSummary({ text: '', streaming: true, fingerprint, hidden: false });
     try {
       const res = await fetch('/api/ai/summary', {
         method: 'POST',
@@ -76,7 +87,9 @@ export function Thread() {
       }
       setSummary((s) => (s ? { ...s, streaming: false } : s));
     } catch (e) {
-      setSummary({ text: `Summary failed: ${(e as Error).message}`, streaming: false });
+      // Failed runs keep fingerprint '' so the next click retries instead of
+      // caching an error message.
+      setSummary({ text: `Summary failed: ${(e as Error).message}`, streaming: false, fingerprint: '', hidden: false });
     }
   }
   const messages = useStore((s) => s.messages);
@@ -422,25 +435,42 @@ export function Thread() {
           </div>
         </div>
         {aiEnabled && (
-          <button
-            className="tool-btn"
-            title="Summarize this chat (AI)"
-            disabled={summary?.streaming}
-            onClick={() => void summarize()}
-          >
-            {summary?.streaming ? '…' : '✨'}
-          </button>
+          <>
+            {summary && !summary.hidden && !summary.streaming && (
+              <button
+                className="tool-btn"
+                title="Re-run the summary (even if nothing changed)"
+                onClick={() => void summarize(true)}
+              >
+                🔄
+              </button>
+            )}
+            <button
+              className="tool-btn"
+              title="Summarize this chat (AI)"
+              disabled={summary?.streaming}
+              onClick={() => void summarize(false)}
+            >
+              {summary?.streaming ? '…' : '✨'}
+            </button>
+          </>
         )}
       </div>
 
-      {summary && (
+      {summary && !summary.hidden && (
         <div className="ai-summary">
           <div className="ai-summary-head">
             <span>✨ AI summary{summary.streaming ? ' (writing…)' : ''}</span>
-            <button className="attach-remove" onClick={() => setSummary(null)}>✕</button>
+            <button
+              className="attach-remove"
+              title="Hide summary"
+              onClick={() => setSummary((s) => (s ? { ...s, hidden: true } : s))}
+            >
+              ✕
+            </button>
           </div>
           <div className="ai-summary-body" dir="auto">
-            {summary.text || '…'}
+            <Formatted text={summary.text || '…'} provider={account?.provider ?? ''} />
           </div>
         </div>
       )}
