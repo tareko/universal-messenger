@@ -530,7 +530,14 @@ export class WhatsAppProvider implements Provider {
     // can be fetched on demand when the user views the chat.
     const mediaPending = mediaNode && !media ? encodeMediaNode(mediaNode) : undefined;
 
-    const ts = Number(msg.messageTimestamp ?? 0) * 1000 || Date.now();
+    // messageTimestamp (epoch seconds) is authoritative; when absent (replayed
+    // events after connection flapping), warn loudly — we fall back to arrival
+    // time, which misorders history (bit us with a 6h-off timestamp).
+    const rawTs = Number(msg.messageTimestamp ?? 0);
+    const ts = rawTs > 0 ? rawTs * 1000 : Date.now();
+    if (rawTs <= 0) {
+      console.warn(`[whatsapp] message without messageTimestamp (using arrival time): id=${key.id} chat=${chatRemoteId}`);
+    }
     return {
       rawKeyId: key.id,
       msg: {
