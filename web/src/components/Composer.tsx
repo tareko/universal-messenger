@@ -208,9 +208,11 @@ export function Composer() {
   }, [editing, selectedChat]);
 
   // Persist the draft continuously (cheap) so it survives chat switches.
+  // Skip while editing — the prefilled body is not a draft, and saving it
+  // would clobber the real draft and refill the box right after submit.
   useEffect(() => {
-    if (selectedChat) setDraft(selectedChat, text);
-  }, [text, selectedChat, setDraft]);
+    if (selectedChat && !editing) setDraft(selectedChat, text);
+  }, [text, selectedChat, editing, setDraft]);
 
   // Tell the provider we're typing (throttled; providers time it out themselves).
   const lastTypingSent = useRef(0);
