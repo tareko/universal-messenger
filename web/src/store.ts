@@ -78,6 +78,8 @@ export interface StoreState {
   /** Effective chat id for actions (resolves person selections to a real chat). */
   targetChatId: () => string | null;
   markRead: (chatId: string) => Promise<void>;
+  /** Read receipts only when the user is plausibly reading (focus + dwell). */
+  attentionMarkRead: (chatId: string, phase: 'open' | 'arrival') => Promise<void>;
   setStatus: (s: AppStatus) => void;
   patchStatus: (p: { providers?: Record<string, string>; carddav?: string }) => void;
   setAccounts: (a: Account[]) => void;
@@ -134,6 +136,7 @@ export const useStore = create<StoreState>((set, get) => ({
 
   selectChat: async (chatId: string) => {
     (window as unknown as { __umChatT0?: number }).__umChatT0 = performance.now();
+    (window as unknown as { __umChatOpenAt?: number }).__umChatOpenAt = Date.now();
     // Capture the unread boundary BEFORE markRead zeroes it (summed across
     // member chats for a linked person), for the unread divider.
     let unread: number;
@@ -162,11 +165,12 @@ export const useStore = create<StoreState>((set, get) => ({
       unreadAtOpen: unread,
     });
     // Fire-and-forget: don't block the message fetch behind roundtrips.
-    void get().markRead(chatId);
+    void get().attentionMarkRead(chatId, 'open');
     await get().refreshMessages();
   },
 
   closeChat: () => {
+    delete (window as unknown as { __umChatOpenAt?: number }).__umChatOpenAt;
     set({ selectedChat: null, messages: [], replyTo: null });
   },
 
@@ -327,7 +331,7 @@ export const useStore = create<StoreState>((set, get) => ({
     const { selectedChat, messages, chats, replyTo } = get();
     const body = text.trim();
     if (!selectedChat || !body) return;
-    void get().markRead(selectedChat); // replying = actively reading
+    void get().markRead(selectedChat); // replying = actively reading — immediate
     // Linked person: route to default chat, or the chat of the last incoming
     // message ("reply via originating service").
     const targetChatId = resolveTargetChat(get(), forceChatId);
@@ -535,6 +539,32 @@ export const useStore = create<StoreState>((set, get) => ({
     }
   },
 
+  /**
+   * Mark read only when the user is plausibly reading: the window must have
+   * real focus (not merely be the "visible" tab behind covered windows), and
+   * — except when replying — the chat must have been open for a moment. A
+   * click-through or an unattended hub no longer sends read receipts.
+   */
+  attentionMarkRead: async (chatId: string, phase: 'open' | 'arrival') => {
+    if (!document.hasFocus()) return; // covered / background window: no receipts
+    const OPEN_DELAY_MS = 2500;
+    const chatOpenSince = (window as unknown as { __umChatOpenAt?: number }).__umChatOpenAt;
+    if (chatOpenSince) {
+      const waited = Date.now() - chatOpenSince;
+      if (waited < OPEN_DELAY_MS) {
+        if (phase === 'open') {
+          await new Promise((r) => setTimeout(r, OPEN_DELAY_MS - waited));
+          // Re-check: user may have switched away or blurred during the wait.
+          if (!document.hasFocus()) return;
+          if (get().selectedChat !== chatId && !memberChatIds(get()).includes(chatId)) return;
+        } else {
+          return; // arrived before the chat was opened this long: stay unread
+        }
+      }
+    }
+    await get().markRead(chatId);
+  },
+
   setStatus: (s) => set({ status: s }),
   patchStatus: (p) => set((s) => (s.status ? { ...s, status: { ...s.status, ...p } } : s)),
   setAccounts: (a) => set({ accounts: a }),
@@ -578,8 +608,8 @@ export const useStore = create<StoreState>((set, get) => ({
       } else {
         const next = [...messages, msg].sort((a, b) => a.ts - b.ts);
         set({ messages: next });
-        if (document.visibilityState === 'visible') {
-          await get().markRead(msg.chatId);
+        if (document.visibilityState === 'visible' && document.hasFocus()) {
+          await get().attentionMarkRead(msg.chatId, 'arrival');
         }
       }
     }
