@@ -124,6 +124,11 @@ export class MattermostProvider implements Provider {
   private wsSeq = 0;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private syncTimer: NodeJS.Timeout | null = null;
+  /** Terminal auth failure (PAT rejected) — retrying won't help; needs human. */
+  private authFailed = false;
+  private pingTimer: NodeJS.Timeout | null = null;
+  private lastWsTraffic = 0;
+  private healthTimer: NodeJS.Timeout | null = null;
   private userCache = new Map<string, string>(); // user id -> username
   private channelCache = new Map<string, MmChannel>(); // channel id -> channel
 
@@ -164,6 +169,8 @@ export class MattermostProvider implements Provider {
   stop(): void {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     if (this.syncTimer) clearInterval(this.syncTimer);
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    if (this.healthTimer) clearInterval(this.healthTimer);
     this.ws?.close();
     this.ws = null;
   }
@@ -186,6 +193,7 @@ export class MattermostProvider implements Provider {
       setKv('mattermost:url', url.replace(/\/+$/, ''));
       setKv('mattermost:token', token);
     }
+    this.authFailed = false; // a fresh connect attempt resets terminal auth state
     this.state = 'connecting';
     try {
       // Validate credentials and identify ourselves.
@@ -206,6 +214,16 @@ export class MattermostProvider implements Provider {
       // Keep channel list + names fresh (self-heals after token renewals).
       if (this.syncTimer) clearInterval(this.syncTimer);
       this.syncTimer = setInterval(() => void this.syncChannels(), 30 * 60_000);
+      // Self-heal sweep: suspend/resume, network blips, or WS zombies can
+      // leave us in 'error' with valid stored creds — retry periodically.
+      if (!this.healthTimer) {
+        this.healthTimer = setInterval(() => {
+          if (this.state !== 'open' && !this.authFailed && getKv('mattermost:url') && getKv('mattermost:token')) {
+            console.log('[mattermost] health sweep: state=%s — reconnecting', this.state);
+            void this.connect().catch(() => {});
+          }
+        }, 60_000);
+      }
       // Close any previous socket before opening a new one (reconnect/edit).
       this.ws?.close();
       this.ws = null;
@@ -242,6 +260,7 @@ export class MattermostProvider implements Provider {
     });
     // PAT expired mid-session: flip to error so the UI prompts for re-auth.
     if (res.status === 401 && this.state === 'open') {
+      this.authFailed = true; // terminal — don't retry until a human re-links
       this.state = 'error';
       this.ws?.close();
       this.ws = null;
@@ -382,8 +401,10 @@ export class MattermostProvider implements Provider {
     const wsUrl = `${this.base.replace(/^http/, 'ws')}/websocket`;
     const ws = new WebSocket(wsUrl);
     this.ws = ws;
+    this.lastWsTraffic = Date.now();
 
     ws.onopen = () => {
+      this.lastWsTraffic = Date.now();
       ws.send(
         JSON.stringify({
           seq: ++this.wsSeq,
@@ -393,6 +414,7 @@ export class MattermostProvider implements Provider {
       );
     };
     ws.onmessage = (ev) => {
+      this.lastWsTraffic = Date.now();
       try {
         const msg = JSON.parse(String(ev.data)) as {
           event?: string;
@@ -411,6 +433,25 @@ export class MattermostProvider implements Provider {
       }
     };
     ws.onerror = () => ws.close();
+
+    // Keepalive + zombie detection: ping every 45s; if nothing (not even the
+    // pong) arrives for 150s the socket is dead (e.g. after suspend/resume) —
+    // force-close it so onclose triggers the reconnect path.
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    this.pingTimer = setInterval(() => {
+      if (this.ws !== ws) return; // stale timer from a previous socket
+      if (this.state !== 'open') return;
+      if (Date.now() - this.lastWsTraffic > 150_000) {
+        console.log('[mattermost] ws zombie detected — forcing reconnect');
+        ws.close();
+        return;
+      }
+      try {
+        ws.send(JSON.stringify({ seq: ++this.wsSeq, action: 'ping' }));
+      } catch {
+        ws.close();
+      }
+    }, 45_000);
   }
 
   private async onWsEvent(msg: { event?: string; data?: Record<string, unknown> }): Promise<void> {
