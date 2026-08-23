@@ -895,3 +895,54 @@ body {
   border-radius: 8px; font-size: 13px; outline: none;
 }
 .profile-new-contact-row input:focus { border-color: var(--accent); }
+
+/* ---------- Provider outage banner ---------- */
+.outage-banner {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #b3261e;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  animation: outage-pulse 2s ease-in-out infinite;
+}
+
+@keyframes outage-pulse {
+  0%, 100% { box-shadow: 0 6px 24px rgba(179, 38, 30, 0.45); }
+  50% { box-shadow: 0 6px 28px rgba(179, 38, 30, 0.85); }
+}
+
+.outage-icon { font-size: 18px; }
+.outage-text { flex: 1; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.outage-action {
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.outage-action:hover { background: rgba(255, 255, 255, 0.25); }
+
+.outage-dismiss {
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 15px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.outage-dismiss:hover { color: #fff; }
