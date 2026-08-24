@@ -245,12 +245,17 @@ export function setName(id: string, name: string): void {
     .run(id, name);
 }
 
-/** Provider-captured name first, then the CardDAV address book. */
+/** CardDAV address book first (user's own naming wins), then provider-captured
+ *  names (WhatsApp pushNames etc.). Mirrors the chat-title precedence. */
 export function getName(id: string): string | null {
+  return getContactName(id) ?? getNameCaptured(id);
+}
+
+function getNameCaptured(id: string): string | null {
   const row = getDb().prepare('SELECT name FROM names WHERE id = ?').get(id) as
     | { name: string }
     | undefined;
-  return row?.name ?? getContactName(id);
+  return row?.name ?? null;
 }
 
 /** Rewrite a stored group sender id (e.g. a resolved WhatsApp lid → phone). */

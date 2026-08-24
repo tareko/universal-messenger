@@ -1,6 +1,7 @@
 import {
   insertMessage,
   getContactName,
+  getName,
   messageExists,
   isDuplicateMessage,
   isDuplicateReaction,
@@ -140,7 +141,13 @@ export async function ingest(
     msg.vcard
   );
   if (inserted) {
-    broadcast({ type: 'message', data: { ...stored } });
+    // Hydrate the sender display name BEFORE broadcasting — otherwise clients
+    // render the raw number first and swap to the name on the next refetch.
+    const withNames = {
+      ...stored,
+      senderName: stored.sender ? (getName(stored.sender) ?? null) : null,
+    };
+    broadcast({ type: 'message', data: withNames });
     broadcast({ type: 'chats-updated' });
     if (notify && !msg.outgoing) {
       void notifyMessage({
