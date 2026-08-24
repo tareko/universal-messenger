@@ -157,16 +157,20 @@ export function Composer() {
     const q = mentionToken.query;
     const fromChat = participants
       .filter((p) => p.name.toLowerCase().includes(q))
-      .slice(0, 5)
+      .slice(0, 7)
       .map((p) => ({ name: p.name, memberId: p.id, source: 'participant' as const }));
+    // In groups, only members are mentionable (WhatsApp behavior). The DAV
+    // contact fallback applies to DMs only, where there is just one recipient.
+    if (chat?.type === 'group') return fromChat;
     return [...fromChat, ...contactMatches].slice(0, 7);
-  }, [mentionToken, participants, contactMatches]);
+  }, [mentionToken, participants, contactMatches, chat?.type]);
   const showMentionSuggest = mentionCandidates.length > 0;
 
-  // Second-tier suggestions: DAV contacts when the @ query has few local hits.
+  // Second-tier suggestions: DAV contacts when the @ query has few local hits
+  // (DMs only — groups mention participants exclusively).
   useEffect(() => {
     const q = mentionToken?.query ?? '';
-    if (!mentionToken || q.length < 2 || participants.filter((p) => p.name.toLowerCase().includes(q)).length >= 5) {
+    if (chat?.type === 'group' || !mentionToken || q.length < 2 || participants.filter((p) => p.name.toLowerCase().includes(q)).length >= 5) {
       setContactMatches([]);
       return;
     }
@@ -187,7 +191,7 @@ export function Composer() {
       active = false;
       clearTimeout(t);
     };
-  }, [mentionToken, participants]);
+  }, [mentionToken, participants, chat?.type]);
 
   const suggestions = token ? searchEmojis(token.query, 8) : [];
   const showSuggest = suggestions.length > 0;
