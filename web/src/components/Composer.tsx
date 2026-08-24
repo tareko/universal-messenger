@@ -30,8 +30,9 @@ interface MentionCandidate {
 
 /** Find an `@partial` mention token immediately before the caret. */
 function mentionTokenAt(text: string, caret: number): EmojiToken | null {
+  // {0,30}: bare '@' matches too — empty query = show the whole member list.
   const before = text.slice(0, caret);
-  const m = before.match(/(^|\s)@([a-z0-9_+\-. ]{1,30})$/i);
+  const m = before.match(/(^|\s)@([a-z0-9_+\-. ]{0,30})$/i);
   if (!m || m.index === undefined) return null;
   return { start: m.index + m[1].length, query: m[2].toLowerCase() };
 }
@@ -157,7 +158,7 @@ export function Composer() {
     const q = mentionToken.query;
     const fromChat = participants
       .filter((p) => p.name.toLowerCase().includes(q))
-      .slice(0, 7)
+      .slice(0, 30)
       .map((p) => ({ name: p.name, memberId: p.id, source: 'participant' as const }));
     // In groups, only members are mentionable (WhatsApp behavior). The DAV
     // contact fallback applies to DMs only, where there is just one recipient.
