@@ -94,6 +94,7 @@ export class WhatsAppProvider implements Provider {
   private accountId: string | null = null; // 'whatsapp:+<digits>' once linked
   private reconnectTimer: NodeJS.Timeout | null = null;
   private reconnectAttempts = 0;
+  private stableTimer: NodeJS.Timeout | null = null;
   private wasPaired = false;
 
   async start(): Promise<void> {
@@ -107,6 +108,7 @@ export class WhatsAppProvider implements Provider {
 
   stop(): void {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.stableTimer) clearTimeout(this.stableTimer);
     this.sock?.end(undefined);
     this.sock = null;
   }
@@ -123,11 +125,24 @@ export class WhatsAppProvider implements Provider {
     if (this.sock) return; // already connecting/connected
     mkdirSync(sessionDir, { recursive: true });
     const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
+    // Cache the WA web version for 24h — fetching it on every connect adds a
+    // web roundtrip to every reconnect burst (post-suspend flapping).
     let version;
-    try {
-      version = (await fetchLatestBaileysVersion()).version;
-    } catch {
-      version = undefined; // Baileys falls back to its bundled default
+    const cachedVersion = getKv('whatsapp:wa_version');
+    const cachedAt = Number(getKv('whatsapp:wa_version_ts') ?? '0');
+    if (cachedVersion && Date.now() - cachedAt < 24 * 3600_000) {
+      const parts = cachedVersion.split('.').map(Number);
+      if (parts.length === 3 && parts.every((n) => Number.isFinite(n))) {
+        version = parts as [number, number, number];
+      }
+    } else {
+      try {
+        version = (await fetchLatestBaileysVersion()).version;
+        setKv('whatsapp:wa_version', version.join('.'));
+        setKv('whatsapp:wa_version_ts', String(Date.now()));
+      } catch {
+        version = undefined; // Baileys falls back to its bundled default
+      }
     }
     this.state = 'connecting';
     this.qr = null;
@@ -262,7 +277,15 @@ export class WhatsAppProvider implements Provider {
       this.state = 'open';
       this.qr = null;
       this.wasPaired = true;
-      this.reconnectAttempts = 0; // healthy connection resets backoff
+      // Backoff resets only after the connection is STABLE for 60s. Resetting
+      // on open let post-suspend flapping (connect→open→die<1s→reconnect)
+      // re-run at ~3s intervals — a burst of full login handshakes that looks
+      // like a bot and got the account a temp ban.
+      if (this.stableTimer) clearTimeout(this.stableTimer);
+      this.stableTimer = setTimeout(() => {
+        this.stableTimer = null;
+        if (this.state === 'open') this.reconnectAttempts = 0;
+      }, 60_000);
       const me = this.sock?.user;
       const phone = me?.id?.split(':')[0];
       this.accountId = phone ? `whatsapp:+${phone}` : null;
@@ -302,15 +325,28 @@ export class WhatsAppProvider implements Provider {
         this.state = 'close';
         // Reconnect only when previously paired (unpaired QR timeouts shouldn't loop).
         if (this.wasPaired || code !== DisconnectReason.timedOut) {
-          // Exponential backoff with jitter (3s → ~60s cap) so a conflict or
-          // rate-limit doesn't hot-loop the socket.
+          // Exponential backoff with proportional jitter (3s → 5min cap). The
+          // high cap matters during flapping/outages: each attempt is a full
+          // login handshake, and hammering gets the account flagged.
           this.reconnectAttempts++;
-          const delay = Math.min(60_000, 3000 * 2 ** (this.reconnectAttempts - 1));
-          const jitter = Math.floor(Math.random() * 1000);
+          const delay = Math.min(300_000, 3000 * 2 ** (this.reconnectAttempts - 1));
+          const jitter = Math.floor(Math.random() * delay * 0.2);
+          const scheduledAt = Date.now();
           console.log(
             `[whatsapp] connection closed (code ${code}) — reconnecting in ${Math.round((delay + jitter) / 1000)}s (attempt ${this.reconnectAttempts})`
           );
-          this.reconnectTimer = setTimeout(() => void this.connect(), delay + jitter);
+          this.reconnectTimer = setTimeout(() => {
+            // Suspend detection: if the timer fired much later than scheduled,
+            // the machine slept — give the network 15s to settle first so the
+            // first attempt isn't wasted on a half-up wifi/VPN.
+            const slept = Date.now() - scheduledAt > delay + jitter + 5000;
+            if (slept) {
+              console.log('[whatsapp] resume detected — waiting 15s for network to settle');
+              this.reconnectTimer = setTimeout(() => void this.connect(), 15_000);
+              return;
+            }
+            void this.connect();
+          }, delay + jitter);
         }
       }
       broadcast({ type: 'accounts', data: listAccounts() });
