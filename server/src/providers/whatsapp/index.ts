@@ -94,6 +94,7 @@ export class WhatsAppProvider implements Provider {
   private accountId: string | null = null; // 'whatsapp:+<digits>' once linked
   private reconnectTimer: NodeJS.Timeout | null = null;
   private reconnectAttempts = 0;
+  private rejections405 = 0;
   private stableTimer: NodeJS.Timeout | null = null;
   private wasPaired = false;
 
@@ -329,11 +330,19 @@ export class WhatsAppProvider implements Provider {
           // high cap matters during flapping/outages: each attempt is a full
           // login handshake, and hammering gets the account flagged.
           this.reconnectAttempts++;
-          const delay = Math.min(300_000, 3000 * 2 ** (this.reconnectAttempts - 1));
+          // Sustained 405s = the session is being server-side rejected
+          // (throttle/flag state). Keep knocking and it never lifts — after
+          // 4 consecutive rejections, drop to a 30-minute cooldown cadence.
+          if (code === 405) this.rejections405 += 1;
+          else this.rejections405 = 0;
+          const cooldown = this.rejections405 >= 4;
+          const delay = cooldown
+            ? 30 * 60_000
+            : Math.min(300_000, 3000 * 2 ** (this.reconnectAttempts - 1));
           const jitter = Math.floor(Math.random() * delay * 0.2);
           const scheduledAt = Date.now();
           console.log(
-            `[whatsapp] connection closed (code ${code}) — reconnecting in ${Math.round((delay + jitter) / 1000)}s (attempt ${this.reconnectAttempts})`
+            `[whatsapp] connection closed (code ${code}) — reconnecting in ${Math.round((delay + jitter) / 1000)}s (attempt ${this.reconnectAttempts}${cooldown ? ', cooldown — server rejecting session' : ''})`
           );
           this.reconnectTimer = setTimeout(() => {
             // Suspend detection: if the timer fired much later than scheduled,
