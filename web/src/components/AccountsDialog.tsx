@@ -108,6 +108,16 @@ export function AccountsDialog({ onClose }: { onClose: () => void }) {
               >
                 {wa?.state === 'connecting' ? 'Waiting…' : 'Connect WhatsApp'}
               </button>
+              {wa?.state === 'close' && (
+                <button
+                  className="dialog-cancel"
+                  disabled={busy}
+                  title="Clear the stored session and link fresh (use when reconnects keep failing)"
+                  onClick={() => void run(() => api.whatsappLogout())}
+                >
+                  Unlink device (clear session)
+                </button>
+              )}
             </div>
           )}
         </div>

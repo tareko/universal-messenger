@@ -96,6 +96,7 @@ export class WhatsAppProvider implements Provider {
   private reconnectAttempts = 0;
   private rejections405 = 0;
   private stableTimer: NodeJS.Timeout | null = null;
+  private connectWatchdog: NodeJS.Timeout | null = null;
   private wasPaired = false;
 
   async start(): Promise<void> {
@@ -110,6 +111,7 @@ export class WhatsAppProvider implements Provider {
   stop(): void {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     if (this.stableTimer) clearTimeout(this.stableTimer);
+    if (this.connectWatchdog) clearTimeout(this.connectWatchdog);
     this.sock?.end(undefined);
     this.sock = null;
   }
@@ -156,6 +158,25 @@ export class WhatsAppProvider implements Provider {
       syncFullHistory: false,
     });
     this.sock = sock;
+    // Hung-socket watchdog: if WhatsApp blackholes the handshake (accepts the
+    // TCP connection, never sends open/close), we'd wait forever with no
+    // reconnect scheduled — this actually happened (12.5h of silence).
+    // Force-close after 60s without any connection.update event.
+    if (this.connectWatchdog) clearTimeout(this.connectWatchdog);
+    this.connectWatchdog = setTimeout(() => {
+      if (this.sock === sock && this.state === 'connecting') {
+        console.warn('[whatsapp] handshake watchdog: no events in 60s — force-closing stalled socket');
+        try {
+          sock.end(undefined);
+        } catch {
+          /* already dead */
+        }
+        this.sock = null;
+        this.state = 'close';
+        // Trigger the reconnect path manually (close event may never fire).
+        void this.onConnection({ connection: 'close' });
+      }
+    }, 60_000);
 
     sock.ev.on('creds.update', saveCreds);
     sock.ev.on('connection.update', (u) => void this.onConnection(u));
@@ -333,8 +354,14 @@ export class WhatsAppProvider implements Provider {
           // Sustained 405s = the session is being server-side rejected
           // (throttle/flag state). Keep knocking and it never lifts — after
           // 4 consecutive rejections, drop to a 30-minute cooldown cadence.
-          if (code === 405) this.rejections405 += 1;
-          else this.rejections405 = 0;
+          // 405 can also mean WhatsApp stopped accepting the cached client
+          // version — invalidate it so the next attempt fetches fresh.
+          if (code === 405) {
+            this.rejections405 += 1;
+            setKv('whatsapp:wa_version_ts', '0');
+          } else {
+            this.rejections405 = 0;
+          }
           const cooldown = this.rejections405 >= 4;
           const delay = cooldown
             ? 30 * 60_000
