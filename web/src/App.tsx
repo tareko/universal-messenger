@@ -152,7 +152,20 @@ function ProviderOutageBanner({
       downs.push(id);
     }
   }
-  const sseDown = sseStatus !== 'connected';
+  // SSE blips are constant (Firefox re-creates EventSource on network-change
+  // events; reconnect takes ~2s). Only a stream that stays down 10s+ is a
+  // real outage worth a banner.
+  const [sseDownSince, setSseDownSince] = useState<number | null>(null);
+  useEffect(() => {
+    if (sseStatus === 'connected') {
+      setSseDownSince(null);
+      return;
+    }
+    const t0 = Date.now();
+    const t = setTimeout(() => setSseDownSince(t0), 10_000);
+    return () => clearTimeout(t);
+  }, [sseStatus]);
+  const sseDown = sseDownSince !== null;
   const sseKey = sseDown ? 'sse' : '';
   const key = [sseKey, ...downs].sort().join(',') || null;
   const allHealthy = !sseDown && downs.length === 0;
