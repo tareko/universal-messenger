@@ -10,6 +10,19 @@ import { normalizeTel } from '../../contacts/match.js';
 let status = 'idle';
 let timer: NodeJS.Timeout | undefined;
 let running = false;
+// Transient network blips are constant (fetch failed, http_522). Only surface
+// an error state after SUSTAINED failure — a single failed poll is noise.
+let consecutiveFailures = 0;
+const FAILURE_THRESHOLD = 3;
+
+function noteFailure(msg: string): void {
+  consecutiveFailures++;
+  if (consecutiveFailures >= FAILURE_THRESHOLD) status = `error: ${msg}`;
+}
+
+function noteSuccess(): void {
+  consecutiveFailures = 0;
+}
 
 export function getPollerStatus(): string {
   return status;
@@ -89,7 +102,7 @@ async function pollOnce(): Promise<number> {
         messages = await getSMS({ did, from, limit: 200 });
       } catch (err) {
         console.error(`[voipms] getSMS failed for ${did}:`, (err as Error).message);
-        status = `error: ${(err as Error).message}`;
+        noteFailure((err as Error).message);
         continue;
       }
       for (const sms of messages) {
@@ -125,11 +138,12 @@ async function pollOnce(): Promise<number> {
     }
     // Persist the highest id seen so suppressed reactions don't loop forever.
     setKv('voipms:poller_since_id', maxSmsId.toString());
+    noteSuccess();
     status = `ok (${new String(newCount)} new @ ${new Date().toLocaleTimeString()})`;
     // A reaction may be ingested before its target within a batch; heal.
     if (newCount > 0) backfillReactions();
   } catch (err) {
-    status = `error: ${(err as Error).message}`;
+    noteFailure((err as Error).message);
     console.error('[voipms] poll error:', (err as Error).message);
   } finally {
     running = false;

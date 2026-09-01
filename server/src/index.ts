@@ -5,9 +5,9 @@ import { config, checkConfig } from './config.js';
 import { initDb } from './store/db.js';
 import { api, checkAuth } from './routes/api.js';
 import { aiApi } from './routes/ai.js';
-import { addClient } from './realtime/sse.js';
-import { startProviders } from './providers/registry.js';
-import { syncContacts } from './contacts/carddav.js';
+import { addClient, broadcast } from './realtime/sse.js';
+import { startProviders, providerStatuses } from './providers/registry.js';
+import { syncContacts, getCarddavStatus } from './contacts/carddav.js';
 import { computeFrequentContacts } from './ai/tagging.js';
 import { createTag, getTags } from './store/db.js';
 
@@ -72,9 +72,28 @@ async function main() {
     });
   }
 
-  app.listen(config.port, config.host, () => {
+  const server = app.listen(config.port, config.host, () => {
     console.log(`[server] listening on ${config.host}:${config.port}`);
   });
+  // SSE streams are long-lived by design — Node's default 300s requestTimeout
+  // was killing every /events connection every 5 minutes (client showed
+  // "Connection lost" on a loop).
+  server.requestTimeout = 0;
+
+  // Live provider-status push: recompute the coarse class of each provider
+  // every 60s and broadcast only on change — the web outage banner re-arms
+  // on recovery without a reload.
+  let lastStatusClasses = '';
+  setInterval(() => {
+    const classes = Object.entries(providerStatuses())
+      .map(([id, s]) => `${id}:${s.split(/[ (:]/)[0]}`)
+      .sort()
+      .join(',');
+    if (classes !== lastStatusClasses) {
+      lastStatusClasses = classes;
+      broadcast({ type: 'status', data: { providers: providerStatuses(), carddav: getCarddavStatus() } });
+    }
+  }, 60_000);
 
   // Background workers
   void syncContacts();

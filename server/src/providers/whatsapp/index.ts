@@ -412,8 +412,36 @@ export class WhatsAppProvider implements Provider {
 
   // ---------- inbound ----------
 
-  private async onMessages(messages: WAMessage[], _type: string): Promise<void> {
+  private async onMessages(messages: WAMessage[], type: string): Promise<void> {
     for (const msg of messages) {
+      // Own-device edits (phone) arrive as an editedMessage wrapper, NOT a
+      // MESSAGE_EDIT protocol message — Baileys normalizes the wrapper away
+      // before its protocol dispatch, so no messages.update ever fires and
+      // ingest would drop the wrapper as unparseable. Handle it here.
+      const editedWrap = msg.message?.editedMessage?.message;
+      if (editedWrap && msg.key.id && this.accountId) {
+        console.log(`[whatsapp] editedMessage upsert: keyId=${msg.key.id} keys=${Object.keys(editedWrap).join('|')}`);
+        const innerEdited = unwrap(editedWrap) ?? editedWrap;
+        const newText = extractText(innerEdited);
+        if (newText) {
+          const id = `${this.accountId}:${msg.key.id}`;
+          updateMessageBody(id, newText);
+          const updated = getMessage(id);
+          if (updated) {
+            updated.reactions = getReactionsForMessage(id);
+            broadcast({ type: 'message-updated', data: updated });
+          }
+        }
+        continue; // never ingest an edit wrapper as a new message
+      }
+      // Diagnostic: protocol messages (edits, revokes) — what does a phone
+      // edit actually deliver?
+      const protoType = msg.message?.protocolMessage?.type;
+      if (protoType !== undefined && protoType !== null) {
+        console.log(
+          `[whatsapp] protocol upsert: type=${protoType} upsertType=${type} fromMe=${Boolean(msg.key.fromMe)} keyId=${msg.key.id} targetId=${msg.message?.protocolMessage?.key?.id} editedKeys=${msg.message?.protocolMessage?.editedMessage ? Object.keys(msg.message.protocolMessage.editedMessage).join('|') : 'none'}`
+        );
+      }
       try {
         await this.ingestWaMessage(msg, true, true);
       } catch (e) {
@@ -583,6 +611,12 @@ export class WhatsAppProvider implements Provider {
         ? null
         : (await this.phoneFromJid(senderJid)) || null
       : null;
+    // Diagnostic: group messages arriving without an identifiable sender.
+    if (isGroup && !key.fromMe && !sender) {
+      console.warn(
+        `[whatsapp] group message without sender: id=${key.id} participant=${String(key.participant)} participantPn=${String(keyAny.participantPn)} senderPn=${String(keyAny.senderPn)} remoteJidAlt=${String((keyAny as { remoteJidAlt?: string }).remoteJidAlt)}`
+      );
+    }
 
     // Capture display names for the names table (drives sender display).
     // Lid-keyed too — migrated to the phone number when the lid resolves.
@@ -734,7 +768,26 @@ export class WhatsAppProvider implements Provider {
   ): void {
     if (!this.accountId) return;
     for (const { key, update } of updates) {
-      if (!key.id) continue;
+      // Diagnostic: any update carrying message content (edit or revoke).
+      if (update.message) {
+        const diagInner = unwrap(update.message);
+        console.log(
+          `[whatsapp] update-with-content: id=${String(key.id)} hasEdited=${Boolean(diagInner?.editedMessage)} stub=${String(update.messageStubType)} shape=${Object.keys(update.message).join('|').slice(0, 120)}`
+        );
+      }
+      const innerEarly = update.message ? unwrap(update.message) : null;
+      const editedEarly = innerEarly?.editedMessage?.message;
+      if (!key.id) {
+        // LID-addressed chats emit MESSAGE_EDIT updates with NO target id at
+        // all (Baileys #2783). Recover the target heuristically: WA's edit
+        // window is ~15min, and an edit is almost always the sender's newest
+        // message in that chat.
+        if (editedEarly) {
+          const newText = extractText(unwrap(editedEarly) ?? editedEarly);
+          if (newText) void this.applyHeuristicEdit(key, newText);
+        }
+        continue;
+      }
       const id = `${this.accountId}:${key.id}`;
 
       // DM read/delivery receipts arrive as message status updates
@@ -776,6 +829,48 @@ export class WhatsAppProvider implements Provider {
           }
         }
       }
+    }
+  }
+
+  /**
+   * Apply an edit whose update arrived WITHOUT a target id (Baileys #2783,
+   * LID addressing). Best available match: the sender's newest message in the
+   * chat within WhatsApp's ~15-minute edit window. Imperfect by nature — log
+   * every application loudly so a mismatch can be traced.
+   */
+  private async applyHeuristicEdit(key: WAMessageKey, newText: string): Promise<void> {
+    if (!this.accountId || !key.remoteJid) return;
+    const isGroup = key.remoteJid.endsWith('@g.us');
+    const chatRemoteId = isGroup ? key.remoteJid : await this.phoneFromJid(key.remoteJid);
+    const chatId = `${this.accountId}:${chatRemoteId}`;
+    const wantOutgoing = key.fromMe ? 1 : 0;
+    // Group edits from others: constrain to the same participant if resolvable.
+    const senderPhone =
+      isGroup && !key.fromMe && key.participant
+        ? (await this.phoneFromJid(key.participant)) || null
+        : null;
+    const WINDOW = 20 * 60_000;
+    const candidates = getMessages(chatId, 30).filter(
+      (m) =>
+        m.outgoing === wantOutgoing &&
+        (m.deleted ?? 0) === 0 &&
+        Date.now() - m.ts < WINDOW &&
+        (senderPhone ? m.sender === senderPhone : true)
+    );
+    const latest = candidates.at(-1); // getMessages is ascending — last = newest
+    if (!latest) {
+      console.warn(`[whatsapp] heuristic edit: no candidate in ${chatId} — edit not applied`);
+      return;
+    }
+    if (latest.body === newText) return; // already applied — idempotent
+    console.log(
+      `[whatsapp] heuristic edit (id-less update): applying to ${latest.id} (was: ${JSON.stringify(latest.body.slice(0, 40))})`
+    );
+    updateMessageBody(latest.id, newText);
+    const updated = getMessage(latest.id);
+    if (updated) {
+      updated.reactions = getReactionsForMessage(latest.id);
+      broadcast({ type: 'message-updated', data: updated });
     }
   }
 
