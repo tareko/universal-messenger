@@ -143,18 +143,9 @@ function ProviderOutageBanner({
   // (avoids "voipms down" on a fresh box where it was never set up).
   const seenHealthy = useRef(new Set<string>());
 
-  if (!status) return null;
-  const downs: string[] = [];
-  for (const [id, state] of Object.entries(status.providers)) {
-    if (/^ok|^open/.test(state)) {
-      seenHealthy.current.add(id);
-    } else if (seenHealthy.current.has(id) && providerDown(state)) {
-      downs.push(id);
-    }
-  }
   // SSE blips are constant (Firefox re-creates EventSource on network-change
   // events; reconnect takes ~2s). Only a stream that stays down 10s+ is a
-  // real outage worth a banner.
+  // real outage worth a banner. (Hooks must precede the early return below.)
   const [sseDownSince, setSseDownSince] = useState<number | null>(null);
   useEffect(() => {
     if (sseStatus === 'connected') {
@@ -165,6 +156,16 @@ function ProviderOutageBanner({
     const t = setTimeout(() => setSseDownSince(t0), 10_000);
     return () => clearTimeout(t);
   }, [sseStatus]);
+
+  if (!status) return null;
+  const downs: string[] = [];
+  for (const [id, state] of Object.entries(status.providers)) {
+    if (/^ok|^open/.test(state)) {
+      seenHealthy.current.add(id);
+    } else if (seenHealthy.current.has(id) && providerDown(state)) {
+      downs.push(id);
+    }
+  }
   const sseDown = sseDownSince !== null;
   const sseKey = sseDown ? 'sse' : '';
   const key = [sseKey, ...downs].sort().join(',') || null;
