@@ -8,6 +8,7 @@ import {
   markMessageDeleted,
   removeReactions,
   setAccountStatus,
+  setProviderAccountsStatus,
   updateMessageBody,
   updateMessageReceipt,
   upsertAccount,
@@ -178,8 +179,10 @@ export class SignalProvider implements Provider {
     this.stop();
     setKv('signal:enabled', '');
     this.state = 'idle';
+    // Unconditional: this.accountId may already be null when disconnect is
+    // called from an error/idle state — the DB row is the source of truth.
+    setProviderAccountsStatus('signal', 'disconnected');
     this.accountId = null;
-    if (this.accountId) setAccountStatus(this.accountId, 'disconnected');
     broadcast({ type: 'accounts', data: listAccounts() });
   }
 

@@ -47,7 +47,9 @@ export function AccountsDialog({ onClose }: { onClose: () => void }) {
   async function run(fn: () => Promise<unknown>) {
     setBusy(true);
     try {
-      await fn();
+      // A hung provider call (dead sidecar, stuck route) must not freeze every
+      // button in the dialog — cap the wait and let the UI recover.
+      await Promise.race([fn(), new Promise((r) => setTimeout(r, 20_000))]);
       await poll();
       await refreshChats();
     } finally {
@@ -143,7 +145,7 @@ function SignalSection({
   run,
 }: {
   sg: SignalState | null;
-  account: { label: string } | undefined;
+  account: { label: string; status: string } | undefined;
   busy: boolean;
   run: (fn: () => Promise<unknown>) => Promise<void>;
 }) {
@@ -171,14 +173,23 @@ function SignalSection({
     }
   }
 
-  const connected = sg?.state === 'open' || Boolean(account?.label);
+  // "Linked" = live, erroring, or has an active account row. Error states
+  // must keep Disconnect reachable — that is exactly when de-linking is
+  // needed.
+  const connected =
+    sg?.state === 'open' ||
+    sg?.state === 'error' ||
+    Boolean(account && account.status !== 'disconnected');
 
   return (
     <div className="dialog-section">
       <div className="dialog-section-title">Signal</div>
       {connected ? (
         <div className="wa-linked">
-          <p>Linked{account ? ` as ${account.label}` : ''}.</p>
+          <p>
+            Linked{account ? ` as ${account.label}` : ''}.
+            {sg && sg.state !== 'open' ? ' (connection problem)' : ''}
+          </p>
           <button className="dialog-cancel" disabled={busy} onClick={() => void run(() => api.signalDisconnect())}>
             Disconnect
           </button>
