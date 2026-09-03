@@ -111,9 +111,10 @@ export async function ingest(
     if (!media.length) media = undefined;
   }
 
-  // Resolve a quoted reply reference to our namespaced id, if known.
+  // Resolve a quoted reply reference to our namespaced id. Store it even when
+  // the target isn't in the DB yet — hydration resolves lazily at query time,
+  // so out-of-order delivery self-heals instead of never showing the quote.
   const quotedId = msg.quotedRemoteId ? `${msg.accountId}:${msg.quotedRemoteId}` : null;
-  const quotedKnown = quotedId && messageExists(quotedId) ? quotedId : null;
 
   const stored: Message = {
     id,
@@ -127,7 +128,7 @@ export async function ingest(
     carrierStatus: msg.carrierStatus ?? '',
     read: 0,
     media,
-    quotedId: quotedKnown,
+    quotedId,
     forwardedFrom: msg.forwardedFrom ?? null,
   };
 
@@ -141,12 +142,26 @@ export async function ingest(
     msg.vcard
   );
   if (inserted) {
-    // Hydrate the sender display name BEFORE broadcasting — otherwise clients
-    // render the raw number first and swap to the name on the next refetch.
-    const withNames = {
+    // Hydrate the sender display name and quote preview BEFORE broadcasting —
+    // otherwise clients render the raw number / no quote and swap on refetch.
+    const withNames: Message = {
       ...stored,
       senderName: stored.sender ? (getName(stored.sender) ?? null) : null,
     };
+    if (stored.quotedId) {
+      const q = getMessage(stored.quotedId);
+      if (q) {
+        withNames.quoted = {
+          id: q.id,
+          chatId: q.chatId,
+          body: q.body,
+          sender: q.sender,
+          outgoing: q.outgoing,
+          senderName: q.senderName ?? null,
+          deleted: q.deleted ?? 0,
+        };
+      }
+    }
     broadcast({ type: 'message', data: withNames });
     broadcast({ type: 'chats-updated' });
     if (notify && !msg.outgoing) {
