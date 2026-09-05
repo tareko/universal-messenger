@@ -133,7 +133,11 @@ export async function ingest(
   };
 
   // Group-MMS leg duplicate (different id, same content+timestamp) — skip.
-  if (isDuplicateMessage(chat.id, stored.body, stored.ts)) return false;
+  // VOIP.MS ONLY: WhatsApp albums share a timestamp across photos with empty
+  // captions, so content-dedup there eats real messages (a 2-photo album
+  // loses its second photo). Other providers dedup by unique id already.
+  if (msg.accountId.startsWith('voipms:') && isDuplicateMessage(chat.id, stored.body, stored.ts))
+    return false;
 
   const inserted = insertMessage(
     stored,
@@ -215,7 +219,7 @@ export function ingestBatch(messages: NormalizedMessage[]): number {
         quotedId: quotedKnown,
         forwardedFrom: msg.forwardedFrom ?? null,
       };
-      if (isDuplicateMessage(chat.id, storedMsg.body, storedMsg.ts)) continue;
+      if (msg.accountId.startsWith('voipms:') && isDuplicateMessage(chat.id, storedMsg.body, storedMsg.ts)) continue;
       if (
         insertMessage(storedMsg, 'poll', msg.media ? undefined : msg.mediaPending, msg.vcard)
       )
