@@ -337,11 +337,16 @@ export function getOrCreateChat(
   opts: { type?: string; contactRaw?: string; title?: string } = {}
 ): Chat {
   const id = chatId(accountId, remoteId);
+  // On conflict: fill a blank title (and contact_raw) when a later call knows
+  // it — a group's first message creates the row with the SENDER's name long
+  // before the subject is known; the sweep must be able to heal that.
   getDb()
     .prepare(
       `INSERT INTO chats(id, account_id, type, remote_id, contact_raw, title, created)
        VALUES(?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(id) DO NOTHING`
+       ON CONFLICT(id) DO UPDATE SET
+         title = CASE WHEN (chats.title IS NULL OR chats.title = '') AND excluded.title IS NOT NULL AND excluded.title != '' THEN excluded.title ELSE chats.title END,
+         contact_raw = CASE WHEN (chats.title IS NULL OR chats.title = '') AND excluded.title IS NOT NULL AND excluded.title != '' THEN excluded.contact_raw ELSE chats.contact_raw END`
     )
     .run(id, accountId, opts.type ?? 'dm', remoteId, opts.contactRaw ?? remoteId, opts.title ?? null, Date.now());
   return getChat(id)!;

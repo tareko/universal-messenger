@@ -97,6 +97,7 @@ export class WhatsAppProvider implements Provider {
   private rejections405 = 0;
   private stableTimer: NodeJS.Timeout | null = null;
   private connectWatchdog: NodeJS.Timeout | null = null;
+  private pendingGroupTitle = new Set<string>();
   private wasPaired = false;
 
   async start(): Promise<void> {
@@ -442,6 +443,14 @@ export class WhatsAppProvider implements Provider {
           `[whatsapp] protocol upsert: type=${protoType} upsertType=${type} fromMe=${Boolean(msg.key.fromMe)} keyId=${msg.key.id} targetId=${msg.message?.protocolMessage?.key?.id} editedKeys=${msg.message?.protocolMessage?.editedMessage ? Object.keys(msg.message.protocolMessage.editedMessage).join('|') : 'none'}`
         );
       }
+      // Diagnostic: reactions arriving as plain upserts (LID mode may route
+      // them here instead of messages.reaction).
+      const rxn = msg.message?.reactionMessage;
+      if (rxn) {
+        console.log(
+          `[whatsapp] reactionMessage upsert: emoji=${JSON.stringify(rxn.text)} targetId=${String(rxn.key?.id)} fromMe=${Boolean(msg.key.fromMe)}`
+        );
+      }
       try {
         await this.ingestWaMessage(msg, true, true);
       } catch (e) {
@@ -596,6 +605,28 @@ export class WhatsAppProvider implements Provider {
     const chatRemoteId = isGroup || isChannel ? key.remoteJid : await this.phoneFromJid(key.remoteJid);
     // Newsletters: fetch the channel name once, in the background.
     if (isChannel) void this.ensureChannelTitle(key.remoteJid);
+    // New groups: the subject isn't in the first message — fetch metadata in
+    // the background (dedup'd) instead of waiting for the 6h group sweep.
+    if (isGroup && this.sock && this.accountId) {
+      const existing = getChat(`${this.accountId}:${key.remoteJid}`);
+      if (!existing?.title && !this.pendingGroupTitle.has(key.remoteJid)) {
+        this.pendingGroupTitle.add(key.remoteJid);
+        void this.sock
+          .groupMetadata(key.remoteJid)
+          .then((md) => {
+            if (md?.subject && this.accountId) {
+              getOrCreateChat(this.accountId, key.remoteJid!, {
+                type: 'group',
+                title: md.subject,
+                contactRaw: md.subject,
+              });
+              broadcast({ type: 'chats-updated' });
+            }
+          })
+          .catch(() => {})
+          .finally(() => this.pendingGroupTitle.delete(key.remoteJid!));
+      }
+    }
 
     // Ephemeral messages carry the chat's expiration in contextInfo — learn
     // the setting passively from incoming (and echoed) messages.
@@ -652,7 +683,9 @@ export class WhatsAppProvider implements Provider {
         chatRemoteId,
         chatType: isChannel ? 'channel' : isGroup ? 'group' : 'dm',
         chatTitle: isGroup ? historyNames?.get(key.remoteJid) : undefined,
-        contactRaw: msg.pushName ?? chatRemoteId,
+        // pushName is the SENDER's name — on groups that would brand the chat
+        // with a person. Only meaningful for DMs.
+        contactRaw: isGroup || isChannel ? chatRemoteId : (msg.pushName ?? chatRemoteId),
         sender: sender ?? undefined,
         ts,
         outgoing: Boolean(key.fromMe),
@@ -877,8 +910,15 @@ export class WhatsAppProvider implements Provider {
   private async onReactions(items: { key: WAMessageKey; reaction: proto.IReaction }[]): Promise<void> {
     if (!this.accountId) return;
     for (const { key, reaction } of items) {
+      // Diagnostic: reaction events in LID-mode chats may lack key.id (same
+      // family as Baileys #2783 edits) — log before the guard drops them.
+      if (!key.id || !key.remoteJid) {
+        console.warn(
+          `[whatsapp] reaction dropped: id=${String(key.id)} remoteJid=${String(key.remoteJid)} emoji=${JSON.stringify(reaction.text)} fromMe=${Boolean(key.fromMe)}`
+        );
+        continue;
+      }
       try {
-        if (!key.id || !key.remoteJid) continue;
         const targetId = `${this.accountId}:${key.id}`;
         const emoji = reaction.text ?? '';
         const isGroup = key.remoteJid.endsWith('@g.us');
