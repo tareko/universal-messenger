@@ -8,6 +8,7 @@ import {
   markMessageDeleted,
   removeReactions,
   setAccountStatus,
+  setName,
   setProviderAccountsStatus,
   updateMessageBody,
   updateMessageReceipt,
@@ -172,7 +173,46 @@ export class SignalProvider implements Provider {
     this.state = 'open';
     broadcast({ type: 'accounts', data: listAccounts() });
     console.log(`[signal] connected as ${this.number}`);
+    void this.syncContacts();
     this.connectWs();
+  }
+
+  /** Map uuid→number and capture contact display names from the sidecar.
+   *  Signal's number privacy means many contacts arrive as bare UUIDs — the
+   *  sidecar's contact book still knows who they are (nickname > name >
+   *  profile name), so mirror that into the names table. */
+  private uuidToNumber = new Map<string, string>();
+  private lastContactSync = 0;
+
+  private async syncContacts(): Promise<void> {
+    if (!this.number) return;
+    try {
+      const res = await fetch(
+        `${this.base}/v1/contacts/${encodeURIComponent(this.number)}`,
+        { signal: AbortSignal.timeout(15_000) }
+      );
+      if (!res.ok) return;
+      const contacts = (await res.json()) as Array<{
+        number?: string;
+        uuid?: string;
+        name?: string;
+        nickname?: { name?: string; given_name?: string; family_name?: string };
+        profile?: { given_name?: string; lastname?: string };
+      }>;
+      for (const c of contacts) {
+        const nick = [c.nickname?.name, [c.nickname?.given_name, c.nickname?.family_name].filter(Boolean).join(' ')]
+          .find((s) => s && s.trim());
+        const prof = [c.profile?.given_name, c.profile?.lastname].filter(Boolean).join(' ').trim();
+        const best = (nick || c.name || prof || '').trim();
+        if (c.uuid && c.number) this.uuidToNumber.set(c.uuid, c.number);
+        if (c.uuid && best) setName(c.uuid, best);
+        if (c.number && best) setName(c.number, best);
+      }
+      this.lastContactSync = Date.now();
+      console.log(`[signal] synced ${contacts.length} contacts`);
+    } catch (e) {
+      console.error('[signal] contact sync failed:', (e as Error).message);
+    }
   }
 
   async disconnect(): Promise<void> {
@@ -264,7 +304,15 @@ export class SignalProvider implements Provider {
     opts: { outgoing: boolean; destination?: string }
   ): Promise<void> {
     if (!this.accountId) return;
-    const source = env.sourceNumber ?? env.source ?? '';
+    let source = env.sourceNumber ?? env.source ?? '';
+    // Number-privacy contacts arrive as bare UUIDs. Prefer the phone number
+    // when the contact book knows it (merges into the phone-keyed chat);
+    // otherwise refresh the contact book in the background to learn the name.
+    if (!env.sourceNumber && source.includes('-')) {
+      const mapped = this.uuidToNumber.get(source);
+      if (mapped) source = mapped;
+      else if (Date.now() - this.lastContactSync > 10 * 60_000) void this.syncContacts();
+    }
       const groupId = dm.groupInfo?.groupId;
       const chatRemoteId = groupId ? `group.${groupId}` : (opts.destination ?? source);
       const baseId = `${chatRemoteId}:${dm.timestamp}`;
