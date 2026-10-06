@@ -571,7 +571,8 @@ export class WhatsAppProvider implements Provider {
   ): Promise<boolean> {
     const norm = await this.normalizeWaMessage(msg, downloadMedia, historyNames);
     if (!norm) return false;
-    const stored = await ingest(norm.msg, 'poll', notify);
+    // System lines (X added Y) shouldn't buzz the phone.
+    const stored = await ingest(norm.msg, 'poll', notify && !norm.msg.system);
     // Already stored (re-sync) but missing its attachment payload — fill it
     // so the attachment can be fetched on demand.
     if (!stored && norm.msg.mediaPending && this.accountId) {
@@ -589,6 +590,32 @@ export class WhatsAppProvider implements Provider {
     const key = msg.key;
     if (!key?.id || !key.remoteJid || key.remoteJid === 'status@broadcast') return null;
     if (!this.accountId) return null;
+
+    // Group lifecycle events (X added Y, …) arrive as stub messages: no
+    // content, a messageStubType, and actor/target JIDs in parameters.
+    const stubType = Number(msg.messageStubType);
+    if (stubType && key.remoteJid.endsWith('@g.us')) {
+      const line = await this.describeGroupEvent(stubType, key, msg.messageStubParameters ?? []);
+      if (!line) return null;
+      const rawTs = Number(msg.messageTimestamp ?? 0);
+      return {
+        rawKeyId: key.id,
+        msg: {
+          id: key.id,
+          accountId: this.accountId,
+          chatRemoteId: key.remoteJid,
+          chatType: 'group',
+          sender:
+            key.fromMe || !key.participant
+              ? undefined
+              : (await this.phoneFromJid(key.participant)) || undefined,
+          ts: rawTs > 0 ? rawTs * 1000 : Date.now(),
+          outgoing: false,
+          body: line,
+          system: true,
+        },
+      };
+    }
 
     const content = unwrap(msg.message);
     if (!content) return null;
@@ -965,6 +992,46 @@ export class WhatsAppProvider implements Provider {
    * Baileys' lid mapping (API first, on-disk mapping files as fallback) and
    * fold any lid-keyed chat into the phone-keyed one.
    */
+  /** Best display label for a participant JID (DAV/captured name → phone). */
+  private async jidLabel(jid: string | null | undefined): Promise<string> {
+    if (!jid) return '';
+    const phone = await this.phoneFromJid(jid);
+    return getName(phone) ?? phone;
+  }
+
+  /** Human line for a WhatsApp group stub event (null = don't display). */
+  private async describeGroupEvent(
+    stub: number,
+    key: WAMessageKey,
+    params: string[]
+  ): Promise<string | null> {
+    const actor = key.fromMe ? 'You' : await this.jidLabel(key.participant);
+    const targets = await Promise.all(params.filter(Boolean).map((p) => this.jidLabel(p)));
+    const list = targets.join(', ');
+    switch (stub) {
+      case WAMessageStubType.GROUP_CREATE:
+        return `${actor || 'Someone'} created the group`;
+      case WAMessageStubType.GROUP_CHANGE_SUBJECT:
+        return `${actor || 'Someone'} changed the group subject`;
+      case WAMessageStubType.GROUP_CHANGE_ICON:
+        return `${actor || 'Someone'} changed the group icon`;
+      case WAMessageStubType.GROUP_PARTICIPANT_ADD:
+        return list ? `${actor || 'Someone'} added ${list}` : null;
+      case WAMessageStubType.GROUP_PARTICIPANT_REMOVE: {
+        if (!list) return null;
+        // Self-exit arrives as a remove where actor === sole target.
+        if (targets.length === 1 && !key.fromMe && (await this.phoneFromJid(key.participant ?? '')) === (await this.phoneFromJid(params[0] ?? ''))) {
+          return `${list} left`;
+        }
+        return `${actor || 'Someone'} removed ${list}`;
+      }
+      case WAMessageStubType.GROUP_PARTICIPANT_PROMOTE:
+        return list ? `${actor || 'Someone'} made ${list} admin` : null;
+      default:
+        return null; // ciphertext/verification/revoke stubs aren't group events
+    }
+  }
+
   private async phoneFromJid(jid: string): Promise<string> {
     if (!jid.endsWith('@lid')) return phoneFromJid(jid);
     const lidUser = jid.split('@')[0];

@@ -130,6 +130,7 @@ export async function ingest(
     media,
     quotedId,
     forwardedFrom: msg.forwardedFrom ?? null,
+    system: msg.system ? 1 : 0,
   };
 
   // Group-MMS leg duplicate (different id, same content+timestamp) — skip.
@@ -218,6 +219,7 @@ export function ingestBatch(messages: NormalizedMessage[]): number {
         media: msg.media,
         quotedId: quotedKnown,
         forwardedFrom: msg.forwardedFrom ?? null,
+        system: msg.system ? 1 : 0,
       };
       if (msg.accountId.startsWith('voipms:') && isDuplicateMessage(chat.id, storedMsg.body, storedMsg.ts)) continue;
       if (

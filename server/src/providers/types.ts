@@ -26,6 +26,8 @@ export interface NormalizedMessage {
   carrierStatus?: string;
   /** A shared contact card (vCard text). */
   vcard?: string;
+  /** Group lifecycle event (X added Y, …) — display as a system line. */
+  system?: boolean;
 }
 
 export interface OutgoingMedia {

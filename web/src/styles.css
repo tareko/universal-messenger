@@ -946,3 +946,19 @@ body {
   padding: 2px 4px;
 }
 .outage-dismiss:hover { color: #fff; }
+
+/* ---------- Group lifecycle system lines (X added Y) ---------- */
+.system-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 6px 16px;
+  color: var(--muted, #8a8f98);
+  font-size: 12.5px;
+  text-align: center;
+}
+.system-line .bubble-time {
+  font-size: 11px;
+  opacity: 0.75;
+}

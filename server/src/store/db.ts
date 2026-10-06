@@ -213,6 +213,12 @@ export function initDb() {
   } catch {
     /* column exists */
   }
+  // Group lifecycle events (X added Y, …) rendered as centered system lines.
+  try {
+    db.exec('ALTER TABLE messages ADD COLUMN system INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    /* column exists */
+  }
   return db;
 }
 
@@ -546,6 +552,7 @@ function rowToMessage(r: Record<string, unknown>): Message {
     media: parseMedia(r.media),
     mediaPending: Boolean(r.media_pending),
     deleted: Number(r.deleted ?? 0),
+    system: Number(r.system ?? 0),
     receipt: r.receipt ? String(r.receipt) : undefined,
     contactCard: parseContactCard(r.vcard),
     quotedId: r.quoted_id ? String(r.quoted_id) : null,
@@ -613,8 +620,8 @@ export function insertMessage(
 ): boolean {
   const res = getDb()
     .prepare(
-      `INSERT INTO messages(id, chat_id, account_id, ts, date, outgoing, sender, body, media, quoted_id, forwarded_from, read, source, carrier_status, media_pending, vcard)
-       VALUES(@id, @chatId, @accountId, @ts, @date, @outgoing, @sender, @body, @media, @quotedId, @forwardedFrom, @read, @source, @carrierStatus, @mediaPending, @vcard)
+      `INSERT INTO messages(id, chat_id, account_id, ts, date, outgoing, sender, body, media, quoted_id, forwarded_from, read, source, carrier_status, media_pending, vcard, system)
+       VALUES(@id, @chatId, @accountId, @ts, @date, @outgoing, @sender, @body, @media, @quotedId, @forwardedFrom, @read, @source, @carrierStatus, @mediaPending, @vcard, @system)
        ON CONFLICT(id) DO NOTHING`
     )
     .run({
@@ -634,6 +641,7 @@ export function insertMessage(
       carrierStatus: msg.carrierStatus ?? '',
       mediaPending: mediaPending ?? null,
       vcard: vcard ?? null,
+      system: msg.system ? 1 : 0,
     });
   return res.changes > 0;
 }

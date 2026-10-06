@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
@@ -103,6 +104,18 @@ fun ThreadScreen(store: AppStore) {
 
 @Composable
 private fun Bubble(msg: Message, mediaUrl: (com.universalmessenger.app.data.MediaRef) -> String) {
+    // Group lifecycle event (X added Y, …) — centered line, no bubble.
+    if (msg.system == 1) {
+        Box(Modifier.fillMaxWidth().padding(vertical = 4.dp), Alignment.Center) {
+            Text(
+                msg.body,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+        }
+        return
+    }
     val mine = msg.outgoing == 1
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
         Column(

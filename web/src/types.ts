@@ -50,6 +50,8 @@ export interface Message {
   edited?: number;
   /** 1 = delete-for-everyone tombstone (body/media blanked). */
   deleted?: number;
+  /** 1 = group lifecycle event (X added Y, …) — centered system line. */
+  system?: number;
   /** Outgoing receipt status: 'sent' | 'delivered' | 'read' (where supported). */
   receipt?: string;
   /** A shared contact card (vCard). */

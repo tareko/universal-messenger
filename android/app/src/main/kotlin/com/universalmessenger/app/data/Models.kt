@@ -45,6 +45,7 @@ data class Message(
     val forwardedFrom: String? = null,
     val edited: Int? = null,
     val deleted: Int? = null,
+    val system: Int? = null,
     val receipt: String? = null,
     val contactCard: ContactCard? = null,
     val reactions: List<ReactionRef>? = null,

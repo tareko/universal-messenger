@@ -772,6 +772,16 @@ function Bubble({
       (editWindow === undefined || Date.now() - msg.ts < editWindow)
   );
 
+  // Group lifecycle event (X added Y, …) — centered grey line, no bubble.
+  if (msg.system) {
+    return (
+      <div className="system-line" id={`msg-${msg.id}`} dir="auto">
+        <span>{msg.body}</span>
+        <span className="bubble-time">{formatTime(msg.ts)}</span>
+      </div>
+    );
+  }
+
   // Delete-for-everyone tombstone.
   if (msg.deleted) {
     return (
