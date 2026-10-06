@@ -46,6 +46,7 @@ export function App() {
         {loading && <div className="loading-bar">Connecting…</div>}
         {error && <div className="error-bar">{error}</div>}
         <Thread />
+        <ComposerPaneDivider />
         <Composer />
       </main>
 
@@ -53,6 +54,43 @@ export function App() {
       {notifyOpen && <NotificationsDialog onClose={() => setNotifyOpen(false)} />}
       {aiOpen && <AiDialog onClose={() => setAiOpen(false)} />}
     </div>
+  );
+}
+
+/** Draggable divider between the thread and the composer — drag up to give
+ *  the message box more room (persisted; double-click resets to auto). */
+function ComposerPaneDivider() {
+  function startDrag(e: React.PointerEvent) {
+    e.preventDefault();
+    const ta = document.querySelector('.composer textarea') as HTMLTextAreaElement | null;
+    if (!ta) return;
+    const startH = ta.offsetHeight;
+    const startY = e.clientY;
+    let last = startH;
+    const move = (ev: PointerEvent) => {
+      last = Math.round(
+        Math.max(44, Math.min(window.innerHeight * 0.7, startH + (startY - ev.clientY)))
+      );
+      window.dispatchEvent(new CustomEvent('um-composer-height', { detail: last }));
+    };
+    const up = () => {
+      localStorage.setItem('um-composer-h', String(last));
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }
+  return (
+    <div
+      className="pane-resizer"
+      title="Drag to resize the message box — double-click to reset"
+      onPointerDown={startDrag}
+      onDoubleClick={() => {
+        localStorage.removeItem('um-composer-h');
+        window.dispatchEvent(new CustomEvent('um-composer-height', { detail: 0 }));
+      }}
+    />
   );
 }
 

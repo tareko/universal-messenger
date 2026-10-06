@@ -126,6 +126,28 @@ export function Composer() {
     el.style.height = `${Math.min(el.scrollHeight, 320)}px`;
   }, [text]);
 
+  // Pane-divider resizing: the divider broadcasts target heights; once used,
+  // the user's height wins over auto-grow. 0 = reset to auto.
+  useEffect(() => {
+    const apply = (h: number) => {
+      const el = taRef.current;
+      if (!el) return;
+      if (h > 0) {
+        manualHeight.current = h;
+        el.style.height = `${h}px`;
+      } else {
+        manualHeight.current = null;
+        el.style.height = 'auto';
+        el.style.height = `${Math.min(el.scrollHeight, 320)}px`;
+      }
+    };
+    const stored = Number(localStorage.getItem('um-composer-h') ?? '0');
+    if (stored > 0) apply(stored);
+    const onResize = (ev: Event) => apply((ev as CustomEvent<number>).detail || 0);
+    window.addEventListener('um-composer-height', onResize);
+    return () => window.removeEventListener('um-composer-height', onResize);
+  }, []);
+
   const chat = chats.find((c) => c.id === selectedChat);
   // SMS character accounting only applies to SMS/MMS providers.
   const isSms = chat?.provider === 'voipms';
