@@ -999,6 +999,23 @@ export class WhatsAppProvider implements Provider {
     return getName(phone) ?? phone;
   }
 
+  /**
+   * Stub parameters aren't always bare JIDs — some Baileys builds deliver
+   * participant entries as JSON objects ({id, phoneNumber, admin}). Prefer
+   * the real phone number over the lid.
+   */
+  private parseStubParam(p: string): string {
+    if (p.startsWith('{')) {
+      try {
+        const o = JSON.parse(p) as { id?: string; phoneNumber?: string; userJid?: string };
+        return o.phoneNumber ?? o.userJid ?? o.id ?? '';
+      } catch {
+        /* fall through to raw */
+      }
+    }
+    return p;
+  }
+
   /** Human line for a WhatsApp group stub event (null = don't display). */
   private async describeGroupEvent(
     stub: number,
@@ -1006,7 +1023,8 @@ export class WhatsAppProvider implements Provider {
     params: string[]
   ): Promise<string | null> {
     const actor = key.fromMe ? 'You' : await this.jidLabel(key.participant);
-    const targets = await Promise.all(params.filter(Boolean).map((p) => this.jidLabel(p)));
+    const jids = params.filter(Boolean).map((p) => this.parseStubParam(p)).filter(Boolean);
+    const targets = await Promise.all(jids.map((j) => this.jidLabel(j)));
     const list = targets.join(', ');
     switch (stub) {
       case WAMessageStubType.GROUP_CREATE:
@@ -1020,7 +1038,7 @@ export class WhatsAppProvider implements Provider {
       case WAMessageStubType.GROUP_PARTICIPANT_REMOVE: {
         if (!list) return null;
         // Self-exit arrives as a remove where actor === sole target.
-        if (targets.length === 1 && !key.fromMe && (await this.phoneFromJid(key.participant ?? '')) === (await this.phoneFromJid(params[0] ?? ''))) {
+        if (targets.length === 1 && !key.fromMe && (await this.phoneFromJid(key.participant ?? '')) === (await this.phoneFromJid(jids[0] ?? ''))) {
           return `${list} left`;
         }
         return `${actor || 'Someone'} removed ${list}`;
