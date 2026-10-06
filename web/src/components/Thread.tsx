@@ -772,12 +772,14 @@ function Bubble({
       (editWindow === undefined || Date.now() - msg.ts < editWindow)
   );
 
-  // Group lifecycle event (X added Y, …) — centered grey line, no bubble.
+  // Group lifecycle event (X added Y, …) — centered grey chip, no bubble.
   if (msg.system) {
     return (
-      <div className="system-line" id={`msg-${msg.id}`} dir="auto">
-        <span>{msg.body}</span>
-        <span className="bubble-time">{formatTime(msg.ts)}</span>
+      <div className="system-line" id={`msg-${msg.id}`}>
+        <div className="system-line-chip" dir="auto">
+          <span>{msg.body}</span>
+          <span className="bubble-time">{formatTime(msg.ts)}</span>
+        </div>
       </div>
     );
   }

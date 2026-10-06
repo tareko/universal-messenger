@@ -114,6 +114,17 @@ export function Composer() {
   const [mentions, setMentions] = useState<{ name: string; memberId: string }[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  // Auto-grow the composer with content — unless the user dragged the resize
+  // handle (then their height is the law until the page reloads).
+  const manualHeight = useRef<number | null>(null);
+  const growH0 = useRef<number | null>(null);
+
+  useEffect(() => {
+    const el = taRef.current;
+    if (!el || manualHeight.current !== null) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 320)}px`;
+  }, [text]);
 
   const chat = chats.find((c) => c.id === selectedChat);
   // SMS character accounting only applies to SMS/MMS providers.
@@ -624,6 +635,18 @@ export function Composer() {
             recomputeToken(e.target.value);
           }}
           onPaste={onPaste}
+          onMouseDown={(e) => {
+            // Native resize handle drag: remember the pre-drag height so a
+            // mouseup mismatch tells us the user resized manually.
+            growH0.current = (e.target as HTMLTextAreaElement).offsetHeight;
+          }}
+          onMouseUp={(e) => {
+            const el = e.target as HTMLTextAreaElement;
+            if (growH0.current !== null && el.offsetHeight !== growH0.current) {
+              manualHeight.current = el.offsetHeight; // user owns the height now
+            }
+            growH0.current = null;
+          }}
           onKeyUp={(e) => {
             if (['ArrowUp', 'ArrowDown', 'Enter', 'Tab', 'Escape'].includes(e.key)) return;
             recomputeToken(text);
