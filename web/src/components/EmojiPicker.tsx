@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { pickerEmojis } from '../emoji';
+import { loadEmojiIndex, pickerEmojis } from '../emoji';
 
 export function EmojiPicker({
   onPick,
@@ -9,7 +9,16 @@ export function EmojiPicker({
   onClose: () => void;
 }) {
   const [query, setQuery] = useState('');
-  const list = useMemo(() => pickerEmojis(query).slice(0, 240), [query]);
+  // Full Unicode set loads lazily; the curated list answers until then.
+  const [fullReady, setFullReady] = useState(false);
+  useEffect(() => {
+    void loadEmojiIndex().then(() => setFullReady(true));
+  }, []);
+  const list = useMemo(
+    () => pickerEmojis(query).slice(0, 240),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [query, fullReady]
+  );
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

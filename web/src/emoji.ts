@@ -235,25 +235,62 @@ export const EMOJIS: EmojiDef[] = [
   { char: '🌍', shortcodes: ['earth', 'world', 'globe'] },
 ];
 
+/** Aliases the dataset's slugs don't cover. */
+const ALIASES: Record<string, string[]> = {
+  cook: ['chef'],
+  man_cook: ['chef', 'chefman'],
+  woman_cook: ['chef', 'chefwoman'],
+  pinched_fingers: ['chefskiss', 'chefs kiss', 'kiss finger'],
+  cooking: ['fryingpan', 'frypan', 'egg'],
+};
+
+type FullEntry = { name: string; slug: string };
+let fullIndex: EmojiDef[] | null = null;
+let loader: Promise<EmojiDef[]> | null = null;
+
+/** Lazy-load the full Unicode emoji set (1914 incl. ZWJ sequences like 🧑‍🍳).
+ *  Loaded once, on first picker open — the curated list below answers until
+ *  then. */
+export function loadEmojiIndex(): Promise<EmojiDef[]> {
+  if (fullIndex) return Promise.resolve(fullIndex);
+  if (!loader) {
+    loader = import('unicode-emoji-json').then((mod) => {
+      const raw = mod.default as Record<string, FullEntry>;
+      fullIndex = Object.entries(raw).map(([char, e]) => ({
+        char,
+        shortcodes: [e.slug.replace(/_/g, ' '), ...(ALIASES[e.slug] ?? [])],
+      }));
+      return fullIndex;
+    });
+  }
+  return loader;
+}
+
+function norm(s: string): string {
+  return s.toLowerCase().replace(/[\s_:-]+/g, '');
+}
+
+function searchIn(list: EmojiDef[], rawQuery: string, limit: number): EmojiDef[] {
+  const q = norm(rawQuery);
+  if (!q) return list.slice(0, limit);
+  const starts: EmojiDef[] = [];
+  const contains: EmojiDef[] = [];
+  for (const e of list) {
+    const codes = e.shortcodes.map(norm);
+    if (codes.some((c) => c.startsWith(q))) starts.push(e);
+    else if (codes.some((c) => c.includes(q)) || norm(e.char) === q) contains.push(e);
+    if (starts.length >= limit) break;
+  }
+  return [...starts, ...contains].slice(0, limit);
+}
+
 /** Find emojis whose shortcode matches a query prefix (colon autocomplete). */
 export function searchEmojis(query: string, limit = 8): EmojiDef[] {
-  const q = query.toLowerCase().replace(/[:]/g, '');
-  if (!q) return [];
-  const out: EmojiDef[] = [];
-  for (const e of EMOJIS) {
-    if (e.shortcodes.some((s) => s.startsWith(q) || s.includes(q))) {
-      out.push(e);
-      if (out.length >= limit) break;
-    }
-  }
-  return out;
+  if (!query) return [];
+  return searchIn(fullIndex ?? EMOJIS, query, limit);
 }
 
 /** Emojis for the picker grid, optionally filtered by search text. */
 export function pickerEmojis(filter: string): EmojiDef[] {
-  const q = filter.trim().toLowerCase();
-  if (!q) return EMOJIS.filter((e) => e.shortcodes.length > 0);
-  return EMOJIS.filter(
-    (e) => e.char.includes(q) || e.shortcodes.some((s) => s.includes(q))
-  );
+  return searchIn(fullIndex ?? EMOJIS, filter, 240);
 }
