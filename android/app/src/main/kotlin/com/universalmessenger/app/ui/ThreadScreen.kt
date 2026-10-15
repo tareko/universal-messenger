@@ -116,6 +116,17 @@ private fun Bubble(msg: Message, mediaUrl: (com.universalmessenger.app.data.Medi
         }
         return
     }
+    // Deleted tombstone — content is retained server-side but masked here.
+    if (msg.deleted == 1) {
+        Text(
+            if (msg.outgoing == 1) "🚫 You deleted this message" else "🚫 This message was deleted",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            textAlign = TextAlign.Center,
+        )
+        return
+    }
     val mine = msg.outgoing == 1
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
         Column(

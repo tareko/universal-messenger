@@ -770,11 +770,11 @@ export function deleteMessage(id: string): void {
   getDb().prepare('DELETE FROM reactions WHERE message_id = ?').run(id);
 }
 
-/** Tombstone a message (delete-for-everyone): blank it, keep the row. */
+/** Tombstone a message (delete-for-everyone). Content is RETAINED in the DB
+ *  and merely flagged — clients mask it with an eye to unmask. Don't use for
+ *  privacy wipes; blank the row explicitly for that. */
 export function markMessageDeleted(id: string): void {
-  getDb()
-    .prepare("UPDATE messages SET deleted = 1, body = '', media = NULL, media_pending = NULL WHERE id = ?")
-    .run(id);
+  getDb().prepare('UPDATE messages SET deleted = 1 WHERE id = ?').run(id);
   // Reactions on a deleted message no longer make sense.
   getDb().prepare('DELETE FROM reactions WHERE message_id = ?').run(id);
 }

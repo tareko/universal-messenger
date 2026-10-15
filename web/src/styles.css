@@ -998,3 +998,25 @@ body {
 }
 .pane-resizer:hover::after,
 .pane-resizer:active::after { background: var(--accent); }
+
+/* ---------- Deleted-content unmask ---------- */
+.deleted-bubble { position: relative; }
+.deleted-unmask {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 2;
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 12px;
+  padding: 2px 7px;
+  font-size: 13px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+.deleted-unmask:hover { background: var(--accent); color: #fff; }
+.deleted-text.revealed {
+  color: var(--text-muted);
+  font-style: italic;
+  white-space: pre-wrap;
+}

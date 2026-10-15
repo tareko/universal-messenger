@@ -685,6 +685,8 @@ function Bubble({
 }) {
   const [hover, setHover] = useState(false);
   const [picker, setPicker] = useState(false);
+  // Deleted-content unmask (eye toggle on tombstones).
+  const [revealed, setRevealed] = useState(false);
   const [morePicker, setMorePicker] = useState(false);
   const [mediaRequested, setMediaRequested] = useState(false);
   const [translation, setTranslation] = useState<{ text: string; loading: boolean } | null>(null);
@@ -784,13 +786,37 @@ function Bubble({
     );
   }
 
-  // Delete-for-everyone tombstone.
+  // Delete-for-everyone tombstone — retained content stays masked until the
+  // eye is clicked (old deletions blanked the content and show no eye).
   if (msg.deleted) {
+    const hasContent = Boolean(msg.body || msg.media?.length);
     return (
       <div className={`bubble-row ${incoming ? 'in' : 'out'}`} id={`msg-${msg.id}`}>
         <div className="bubble deleted-bubble">
-          <span className="deleted-text">
-            🚫 {msg.outgoing === 1 ? 'You deleted this message' : 'This message was deleted'}
+          {hasContent ? (
+            <button
+              className="deleted-unmask"
+              title={revealed ? 'Mask again' : 'Unmask deleted content'}
+              onClick={() => setRevealed((r) => !r)}
+            >
+              {revealed ? '🙈' : '👁'}
+            </button>
+          ) : null}
+          {revealed && msg.media?.length ? (
+            <div className="bubble-media">
+              {msg.media
+                .filter((x) => x.contentType.startsWith('image/'))
+                .map((img, i) => (
+                  <a key={i} href={img.url} target="_blank" rel="noreferrer">
+                    <img src={img.url} alt="" loading="lazy" />
+                  </a>
+                ))}
+            </div>
+          ) : null}
+          <span className={`deleted-text${revealed && msg.body ? ' revealed' : ''}`} dir="auto">
+            {revealed && msg.body
+              ? msg.body
+              : `🚫 ${msg.outgoing === 1 ? 'You deleted this message' : 'This message was deleted'}`}
           </span>
           <span className="bubble-meta">
             <span className="bubble-time">{formatTime(msg.ts)}</span>
