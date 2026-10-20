@@ -96,11 +96,23 @@ export class SignalProvider implements Provider {
       this.state = 'error';
       console.error('[signal] connect failed:', (e as Error).message);
     }
+    // Self-heal: the docker sidecar can die (host suspend/reboot) and come
+    // back later — retry while we're enabled but not open/qr. Skipped when
+    // the user deliberately disconnected (signal:enabled cleared).
+    if (!this.healthTimer) {
+      this.healthTimer = setInterval(() => {
+        if (this.state !== 'open' && this.state !== 'qr' && getKv('signal:enabled')) {
+          console.log('[signal] health sweep: state=%s — reconnecting', this.state);
+          void this.connect().catch(() => {});
+        }
+      }, 60_000);
+    }
   }
 
   stop(): void {
     this.stopped = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.healthTimer) clearInterval(this.healthTimer);
     this.ws?.close();
     this.ws = null;
   }
@@ -183,6 +195,7 @@ export class SignalProvider implements Provider {
    *  profile name), so mirror that into the names table. */
   private uuidToNumber = new Map<string, string>();
   private lastContactSync = 0;
+  private healthTimer: NodeJS.Timeout | null = null;
 
   private async syncContacts(): Promise<void> {
     if (!this.number) return;
