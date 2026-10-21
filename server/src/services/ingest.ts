@@ -13,6 +13,7 @@ import {
   getOrCreateChat,
   getChat,
   getDb,
+  updateMessageBody,
 } from '../store/db.js';
 import { broadcast } from '../realtime/sse.js';
 import { notifyMessage } from '../notify/notify.js';
@@ -176,6 +177,22 @@ export async function ingest(
         preview: stored.body || (stored.media?.length ? '📷 Photo' : ''),
         id,
       });
+    }
+  } else {
+    // Not inserted = id already known. A redelivery with a DIFFERENT body is
+    // an edit (phones re-send the whole edited message under the same id —
+    // WhatsApp's own-edit sync for companion devices arrives exactly here).
+    const existing = getMessage(id);
+    if (existing && stored.body && existing.body !== stored.body && !existing.deleted) {
+      console.log(
+        `[ingest] redelivery with new body — treating as edit: ${id} (${JSON.stringify(existing.body.slice(0, 30))} → ${JSON.stringify(stored.body.slice(0, 30))})`
+      );
+      updateMessageBody(id, stored.body);
+      const updated = getMessage(id);
+      if (updated) {
+        updated.reactions = getReactionsForMessage(id);
+        broadcast({ type: 'message-updated', data: updated });
+      }
     }
   }
   return inserted;
