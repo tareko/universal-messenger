@@ -1020,3 +1020,16 @@ body {
   font-style: italic;
   white-space: pre-wrap;
 }
+
+/* ---------- Chat row pin toggle ---------- */
+.contact-pin {
+  display: none;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 4px;
+  border-radius: 6px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.contact-row:hover .contact-pin { display: inline; }
+.contact-pin:hover { background: var(--border); }

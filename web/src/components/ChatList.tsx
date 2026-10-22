@@ -108,6 +108,8 @@ export function ChatList() {
   /** Person-grouped rows: linked chats collapse into one row per person. */
 interface Row {
   selId: string;
+  /** Real chat id (absent for person rows) — enables the pin toggle. */
+  pinChatId?: string;
   name: string;
   subtitle: string;
   subtitleTyping: boolean;
@@ -158,6 +160,7 @@ const displayRowsFn = (
         const sub = chatSubtitle(c);
         rows.push({
           selId: c.id,
+          pinChatId: c.id,
           name: c.name ?? c.title ?? c.contactRaw ?? c.remoteId,
           subtitle: typingHere ? sub.text : sub.text,
           subtitleTyping: sub.typing,
@@ -172,7 +175,7 @@ const displayRowsFn = (
         });
       }
     }
-    return rows.sort((a, b) => b.ts - a.ts);
+    return rows.sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.ts - a.ts);
   };
 
   const displayRows = useMemo(
@@ -292,6 +295,7 @@ const displayRowsFn = (
                   tags={r.tags}
                   selId={r.selId}
                   onClick={() => void selectChat(r.selId)}
+                  onPin={r.pinChatId ? (p) => void api.pinChat(r.pinChatId!, p) : undefined}
                 />
               ))}
             {results.map((c) => (
@@ -344,6 +348,7 @@ const displayRowsFn = (
               tags={r.tags}
               selId={r.selId}
               onClick={() => void selectChat(r.selId)}
+              onPin={r.pinChatId ? (p) => void api.pinChat(r.pinChatId!, p) : undefined}
             />
           ))
         )}
@@ -433,6 +438,7 @@ function ChatRow({
   pinned,
   tags,
   onClick,
+  onPin,
 }: {
   name: string;
   subtitle: string;
@@ -449,6 +455,7 @@ function ChatRow({
   tags?: { id: number; name: string; color: string }[];
   selId?: string;
   onClick: () => void;
+  onPin?: (pinned: boolean) => void;
 }) {
   const allBadges = badges ?? (badge ? [badge] : []);
   return (
@@ -459,12 +466,25 @@ function ChatRow({
           <span className="contact-name">
             {group ? '👥 ' : channel ? '📢 ' : ''}
             {linked ? '🔗 ' : ''}
-            {pinned && group ? '📌 ' : ''}
+            {pinned ? '📌 ' : ''}
             {name}
             {allBadges.map((b, i) => (
               <span key={i} className="provider-badge">{b}</span>
             ))}
           </span>
+          {onPin ? (
+            <span
+              className={`contact-pin${pinned ? ' pinned' : ''}`}
+              role="button"
+              title={pinned ? 'Unpin from top' : 'Pin to top'}
+              onClick={(e) => {
+                e.stopPropagation();
+                onPin(!pinned);
+              }}
+            >
+              {pinned ? '📍' : '📌'}
+            </span>
+          ) : null}
           {ts ? <span className="contact-time">{formatTime(ts)}</span> : null}
         </div>
         <div className="contact-row-bottom">
