@@ -97,6 +97,7 @@ export class WhatsAppProvider implements Provider {
   private rejections405 = 0;
   private stableTimer: NodeJS.Timeout | null = null;
   private connectWatchdog: NodeJS.Timeout | null = null;
+  private recoveryTimer: NodeJS.Timeout | null = null;
   private pendingGroupTitle = new Set<string>();
   private wasPaired = false;
 
@@ -107,10 +108,23 @@ export class WhatsAppProvider implements Provider {
     } else {
       console.log('[whatsapp] no session — connect via the Accounts dialog to link');
     }
+    // Boot-time safety net: if the network isn't up yet when the service
+    // starts, the first connect can die without ever scheduling a retry
+    // (observed after host reboot: state 'close', zero log lines, no timer).
+    // Sweep every 90s and connect whenever nothing else is pending.
+    if (!this.recoveryTimer) {
+      this.recoveryTimer = setInterval(() => {
+        if (this.state === 'open' || this.state === 'qr') return;
+        if (this.sock || this.reconnectTimer) return; // an attempt is in flight or scheduled
+        console.warn(`[whatsapp] recovery sweep: state=${this.state}, no attempt pending — connecting`);
+        void this.connect().catch((e) => console.error('[whatsapp] recovery connect failed:', (e as Error).message));
+      }, 90_000);
+    }
   }
 
   stop(): void {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.recoveryTimer) clearInterval(this.recoveryTimer);
     if (this.stableTimer) clearTimeout(this.stableTimer);
     if (this.connectWatchdog) clearTimeout(this.connectWatchdog);
     this.sock?.end(undefined);
@@ -372,18 +386,23 @@ export class WhatsAppProvider implements Provider {
           console.log(
             `[whatsapp] connection closed (code ${code}) — reconnecting in ${Math.round((delay + jitter) / 1000)}s (attempt ${this.reconnectAttempts}${cooldown ? ', cooldown — server rejecting session' : ''})`
           );
-          this.reconnectTimer = setTimeout(() => {
+          const fire = () => {
+            this.reconnectTimer = null;
             // Suspend detection: if the timer fired much later than scheduled,
             // the machine slept — give the network 15s to settle first so the
             // first attempt isn't wasted on a half-up wifi/VPN.
             const slept = Date.now() - scheduledAt > delay + jitter + 5000;
             if (slept) {
               console.log('[whatsapp] resume detected — waiting 15s for network to settle');
-              this.reconnectTimer = setTimeout(() => void this.connect(), 15_000);
+              this.reconnectTimer = setTimeout(() => {
+                this.reconnectTimer = null;
+                void this.connect();
+              }, 15_000);
               return;
             }
             void this.connect();
-          }, delay + jitter);
+          };
+          this.reconnectTimer = setTimeout(fire, delay + jitter);
         }
       }
       broadcast({ type: 'accounts', data: listAccounts() });

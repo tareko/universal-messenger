@@ -103,7 +103,11 @@ export class SignalProvider implements Provider {
       this.healthTimer = setInterval(() => {
         if (this.state !== 'open' && this.state !== 'qr' && getKv('signal:enabled')) {
           console.log('[signal] health sweep: state=%s — reconnecting', this.state);
-          void this.connect().catch(() => {});
+          void this.connect().catch(() => {
+            // connect() sets 'connecting' before its first await; a failure
+            // must not leave that lying state behind.
+            if (this.state === 'connecting') this.state = 'error';
+          });
         }
       }, 60_000);
     }

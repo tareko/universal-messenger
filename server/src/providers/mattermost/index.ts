@@ -164,6 +164,17 @@ export class MattermostProvider implements Provider {
       this.state = 'error';
       console.error('[mattermost] connect failed:', (e as Error).message);
     }
+    // Install the health sweep at START, not only on a successful connect —
+    // a boot-time failure (network not up yet after reboot) otherwise leaves
+    // the provider in 'error' forever with nothing retrying.
+    if (!this.healthTimer) {
+      this.healthTimer = setInterval(() => {
+        if (this.state !== 'open' && !this.authFailed && getKv('mattermost:url') && getKv('mattermost:token')) {
+          console.log('[mattermost] health sweep: state=%s — reconnecting', this.state);
+          void this.connect().catch(() => {});
+        }
+      }, 60_000);
+    }
   }
 
   stop(): void {
