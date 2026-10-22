@@ -119,7 +119,7 @@ fun ChatListScreen(store: AppStore) {
             }
             val visible = state.chats
                 .filter { (it.hidden ?: 0) == 0 }
-                .sortedWith(compareByDescending<Chat> { it.pinned ?: 0 }.thenByDescending { it.ts })
+                .sortedWith(compareByDescending<Chat> { it.topPinned ?: 0 }.thenByDescending { it.ts })
             LazyColumn(Modifier.fillMaxSize()) {
                 items(visible, key = { it.id }) { chat ->
                     ChatRow(chat, state.typingChatIds.contains(chat.id)) { store.openChat(chat.id) }

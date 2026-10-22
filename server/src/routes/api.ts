@@ -18,6 +18,7 @@ import {
   getKv,
   setKv,
   setChatPinned,
+  setChatTopPinned,
   setChatHidden,
   setChatsHidden,
   setChatTranslateEnabled,
@@ -414,6 +415,15 @@ api.post('/chats/pin', (req, res) => {
   const { chatId, pinned } = req.body as { chatId: string; pinned: boolean };
   if (!chatId) return res.status(400).json({ error: 'chatId required' });
   setChatPinned(chatId, Boolean(pinned));
+  broadcast({ type: 'chats-updated' });
+  res.json({ ok: true });
+});
+
+/** Float any chat to the top of its list (distinct from /chats/pin). */
+api.post('/chats/top-pin', (req, res) => {
+  const { chatId, pinned } = req.body as { chatId: string; pinned: boolean };
+  if (!chatId) return res.status(400).json({ error: 'chatId required' });
+  setChatTopPinned(chatId, Boolean(pinned));
   broadcast({ type: 'chats-updated' });
   res.json({ ok: true });
 });

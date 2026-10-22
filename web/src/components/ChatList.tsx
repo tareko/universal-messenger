@@ -108,7 +108,7 @@ export function ChatList() {
   /** Person-grouped rows: linked chats collapse into one row per person. */
 interface Row {
   selId: string;
-  /** Real chat id (absent for person rows) — enables the pin toggle. */
+  /** Real chat id (absent for person rows) — enables the pin toggles. */
   pinChatId?: string;
   name: string;
   subtitle: string;
@@ -119,7 +119,10 @@ interface Row {
   linked: boolean;
   group?: boolean;
   channel?: boolean;
+  /** Group promoted into the Main tab. */
   pinned?: boolean;
+  /** Floated to the top of its list (any chat type). */
+  topPinned?: boolean;
   tags?: { id: number; name: string; color: string }[];
 }
 
@@ -171,11 +174,15 @@ const displayRowsFn = (
           group: c.type === 'group',
           channel: c.type === 'channel',
           pinned: Boolean(c.pinned),
+          topPinned: Boolean(c.topPinned),
           tags: c.tags,
         });
       }
     }
-    return rows.sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.ts - a.ts);
+    return rows.sort(
+      (a, b) =>
+        Number(Boolean(b.topPinned)) - Number(Boolean(a.topPinned)) || b.ts - a.ts
+    );
   };
 
   const displayRows = useMemo(
@@ -292,10 +299,12 @@ const displayRowsFn = (
                   group={r.group}
                   channel={r.channel}
                   pinned={r.pinned}
+                  topPinned={r.topPinned}
                   tags={r.tags}
                   selId={r.selId}
                   onClick={() => void selectChat(r.selId)}
-                  onPin={r.pinChatId ? (p) => void api.pinChat(r.pinChatId!, p) : undefined}
+                  onTopPin={r.pinChatId ? (p) => void api.topPinChat(r.pinChatId!, p) : undefined}
+                  onSurfacePin={r.pinChatId && r.group ? (p) => void api.pinChat(r.pinChatId!, p) : undefined}
                 />
               ))}
             {results.map((c) => (
@@ -345,10 +354,12 @@ const displayRowsFn = (
               group={r.group}
               channel={r.channel}
               pinned={r.pinned}
+              topPinned={r.topPinned}
               tags={r.tags}
               selId={r.selId}
               onClick={() => void selectChat(r.selId)}
-              onPin={r.pinChatId ? (p) => void api.pinChat(r.pinChatId!, p) : undefined}
+              onTopPin={r.pinChatId ? (p) => void api.topPinChat(r.pinChatId!, p) : undefined}
+              onSurfacePin={r.pinChatId && r.group ? (p) => void api.pinChat(r.pinChatId!, p) : undefined}
             />
           ))
         )}
@@ -406,6 +417,7 @@ function chatRowEqual(
     a.group === b.group &&
     a.channel === b.channel &&
     a.pinned === b.pinned &&
+    a.topPinned === b.topPinned &&
     a.selId === b.selId &&
     JSON.stringify(a.badges) === JSON.stringify(b.badges) &&
     JSON.stringify(a.tags) === JSON.stringify(b.tags)
@@ -436,9 +448,11 @@ function ChatRow({
   channel,
   selId,
   pinned,
+  topPinned,
   tags,
   onClick,
-  onPin,
+  onTopPin,
+  onSurfacePin,
 }: {
   name: string;
   subtitle: string;
@@ -452,10 +466,12 @@ function ChatRow({
   group?: boolean;
   channel?: boolean;
   pinned?: boolean;
+  topPinned?: boolean;
   tags?: { id: number; name: string; color: string }[];
   selId?: string;
   onClick: () => void;
-  onPin?: (pinned: boolean) => void;
+  onTopPin?: (pinned: boolean) => void;
+  onSurfacePin?: (pinned: boolean) => void;
 }) {
   const allBadges = badges ?? (badge ? [badge] : []);
   return (
@@ -466,25 +482,41 @@ function ChatRow({
           <span className="contact-name">
             {group ? '👥 ' : channel ? '📢 ' : ''}
             {linked ? '🔗 ' : ''}
-            {pinned ? '📌 ' : ''}
+            {pinned && group ? '⭐ ' : ''}
+            {topPinned ? '📌 ' : ''}
             {name}
             {allBadges.map((b, i) => (
               <span key={i} className="provider-badge">{b}</span>
             ))}
           </span>
-          {onPin ? (
-            <span
-              className={`contact-pin${pinned ? ' pinned' : ''}`}
-              role="button"
-              title={pinned ? 'Unpin from top' : 'Pin to top'}
-              onClick={(e) => {
-                e.stopPropagation();
-                onPin(!pinned);
-              }}
-            >
-              {pinned ? '📍' : '📌'}
-            </span>
-          ) : null}
+          <span className="contact-row-actions">
+            {onSurfacePin ? (
+              <span
+                className={`contact-pin surface${pinned ? ' on' : ''}`}
+                role="button"
+                title={pinned ? 'Remove from Main chat list' : 'Show in Main chat list'}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSurfacePin(!pinned);
+                }}
+              >
+                {pinned ? '★' : '☆'}
+              </span>
+            ) : null}
+            {onTopPin ? (
+              <span
+                className={`contact-pin${topPinned ? ' pinned' : ''}`}
+                role="button"
+                title={topPinned ? 'Unpin from top' : 'Pin to top'}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onTopPin(!topPinned);
+                }}
+              >
+                {topPinned ? '📍' : '📌'}
+              </span>
+            ) : null}
+          </span>
           {ts ? <span className="contact-time">{formatTime(ts)}</span> : null}
         </div>
         <div className="contact-row-bottom">

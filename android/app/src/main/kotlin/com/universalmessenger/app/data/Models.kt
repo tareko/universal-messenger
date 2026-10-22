@@ -75,6 +75,7 @@ data class Chat(
     val lastMessage: Message? = null,
     val ephemeralSeconds: Int? = null,
     val pinned: Int? = null,
+    val topPinned: Int? = null,
     val hidden: Int? = null,
     val translateEnabled: Int? = null,
     val suggestEnabled: Int? = null,

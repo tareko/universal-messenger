@@ -1033,3 +1033,9 @@ body {
 }
 .contact-row:hover .contact-pin { display: inline; }
 .contact-pin:hover { background: var(--border); }
+
+/* Row action cluster (top pin, surface pin) */
+.contact-row-actions { display: none; align-items: center; gap: 2px; flex-shrink: 0; }
+.contact-row:hover .contact-row-actions { display: inline-flex; }
+.contact-pin.surface { font-size: 14px; color: var(--text-muted); }
+.contact-pin.surface.on { color: #e8a200; }

@@ -153,6 +153,8 @@ export const api = {
   markRead: (chatId: string) => postJson('/markread', { chatId }),
   pinChat: (chatId: string, pinned: boolean) =>
     postJson<{ ok: boolean }>('/chats/pin', { chatId, pinned }),
+  topPinChat: (chatId: string, pinned: boolean) =>
+    postJson<{ ok: boolean }>('/chats/top-pin', { chatId, pinned }),
   hideChat: (chatId: string, hidden: boolean) =>
     postJson<{ ok: boolean }>('/chats/hide', { chatId, hidden }),
   setTranslateEnabled: (chatId: string, enabled: boolean) =>

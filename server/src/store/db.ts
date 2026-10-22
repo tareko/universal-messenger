@@ -219,6 +219,12 @@ export function initDb() {
   } catch {
     /* column exists */
   }
+  // Float-to-top pin (distinct from the group main-tab pin).
+  try {
+    db.exec('ALTER TABLE chats ADD COLUMN top_pinned INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    /* column exists */
+  }
   return db;
 }
 
@@ -443,15 +449,21 @@ function rowToChat(r: Record<string, unknown>): Chat {
     ts: r.ts !== undefined ? Number(r.ts) : 0,
     ephemeralSeconds: Number(r.ephemeral_seconds ?? 0),
     pinned: Number(r.pinned ?? 0),
+    topPinned: Number(r.top_pinned ?? 0),
     hidden: Number(r.hidden ?? 0),
     translateEnabled: Number(r.translate_enabled ?? 0),
     suggestEnabled: Number(r.suggest_enabled ?? 0),
   };
 }
 
-/** Pin/unpin a group chat into the main chat list (also unmutes it by default). */
+/** Pin/unpin a group chat into the main chat list (Groups tab otherwise). */
 export function setChatPinned(chatIdArg: string, pinned: boolean): void {
   getDb().prepare('UPDATE chats SET pinned = ? WHERE id = ?').run(pinned ? 1 : 0, chatIdArg);
+}
+
+/** Float any chat to the top of its list (distinct from the main-tab pin). */
+export function setChatTopPinned(chatIdArg: string, top: boolean): void {
+  getDb().prepare('UPDATE chats SET top_pinned = ? WHERE id = ?').run(top ? 1 : 0, chatIdArg);
 }
 
 /** Enable/disable the AI translate action for a chat (off by default). */
