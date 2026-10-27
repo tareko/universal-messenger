@@ -659,7 +659,7 @@ export class WhatsAppProvider implements Provider {
         this.pendingGroupTitle.add(key.remoteJid);
         void this.sock
           .groupMetadata(key.remoteJid)
-          .then((md) => {
+          .then(async (md) => {
             if (!md || !this.accountId) return;
             if (md.subject) {
               getOrCreateChat(this.accountId, key.remoteJid!, {
@@ -668,17 +668,16 @@ export class WhatsAppProvider implements Provider {
                 contactRaw: md.subject,
               });
             }
-            // Untitled groups: store participants so the display layer can
-            // synthesize a member-list title ("Arash Ghiassi, Riaz Sayani").
-            const parts = md.participants;
-            if (parts?.length) {
-              replaceChatParticipants(
-                `${this.accountId}:${key.remoteJid}`,
-                parts.map((p) => ({
-                  id: (p as { jid?: string; id?: string }).jid ?? (p as { id?: string }).id ?? '',
-                  name: (p as { name?: string }).name ?? '',
-                }))
-              );
+            // Untitled groups: store participants (metadata carries real
+            // phones + names in LID-mode groups — prefer those) so the
+            // display layer can build a member-list title.
+            if (md.participants?.length) {
+              const out: { id: string; name: string }[] = [];
+              for (const p of md.participants) {
+                const phone = await this.phoneFromJid(p.phoneNumber ?? p.id);
+                out.push({ id: phone, name: p.name ?? p.notify ?? getName(phone) ?? phone });
+              }
+              if (out.length) replaceChatParticipants(`${this.accountId}:${key.remoteJid}`, out);
             }
             broadcast({ type: 'chats-updated' });
           })
@@ -1275,8 +1274,10 @@ export class WhatsAppProvider implements Provider {
       const md = await this.sock.groupMetadata(chat.remoteId);
       const out: { id: string; name: string }[] = [];
       for (const p of md.participants) {
-        const phone = await this.phoneFromJid(p.id);
-        out.push({ id: phone, name: getName(phone) ?? phone });
+        // LID-mode groups: metadata carries the real phone + names directly —
+        // prefer them over lid-jid resolution.
+        const phone = await this.phoneFromJid(p.phoneNumber ?? p.id);
+        out.push({ id: phone, name: p.name ?? p.notify ?? getName(phone) ?? phone });
       }
       return out;
     } catch {
