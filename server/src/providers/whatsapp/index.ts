@@ -660,14 +660,27 @@ export class WhatsAppProvider implements Provider {
         void this.sock
           .groupMetadata(key.remoteJid)
           .then((md) => {
-            if (md?.subject && this.accountId) {
+            if (!md || !this.accountId) return;
+            if (md.subject) {
               getOrCreateChat(this.accountId, key.remoteJid!, {
                 type: 'group',
                 title: md.subject,
                 contactRaw: md.subject,
               });
-              broadcast({ type: 'chats-updated' });
             }
+            // Untitled groups: store participants so the display layer can
+            // synthesize a member-list title ("Arash Ghiassi, Riaz Sayani").
+            const parts = md.participants;
+            if (parts?.length) {
+              replaceChatParticipants(
+                `${this.accountId}:${key.remoteJid}`,
+                parts.map((p) => ({
+                  id: (p as { jid?: string; id?: string }).jid ?? (p as { id?: string }).id ?? '',
+                  name: (p as { name?: string }).name ?? '',
+                }))
+              );
+            }
+            broadcast({ type: 'chats-updated' });
           })
           .catch(() => {})
           .finally(() => this.pendingGroupTitle.delete(key.remoteJid!));

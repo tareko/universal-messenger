@@ -14,6 +14,7 @@ import {
   getChat,
   getDb,
   updateMessageBody,
+  syntheticGroupTitle,
 } from '../store/db.js';
 import { broadcast } from '../realtime/sse.js';
 import { notifyMessage } from '../notify/notify.js';
@@ -30,7 +31,9 @@ function namespacedId(msg: NormalizedMessage): string {
 function chatDisplayName(chatId: string, fallback: string): string {
   const chat = getChat(chatId);
   if (!chat) return fallback;
-  if (chat.type === 'group' || chat.type === 'channel') return chat.title ?? fallback;
+  if (chat.type === 'group' || chat.type === 'channel') {
+    return chat.title || syntheticGroupTitle(chat) || fallback;
+  }
   return getContactName(chat.remoteId) ?? chat.contactRaw ?? fallback;
 }
 

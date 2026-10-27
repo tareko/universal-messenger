@@ -526,6 +526,10 @@ export function getChats(accountId?: string): Chat[] {
       ? getMessage(String(r.last_id))
       : latestMessageForChat(chat.id);
     chat.lastMessage = last ?? undefined;
+    // Untitled groups (no subject set) display a WhatsApp-style member list.
+    if ((chat.type === 'group' || chat.type === 'channel') && !chat.title && !chat.name) {
+      chat.title = syntheticGroupTitle(chat);
+    }
     return chat;
   });
 }
@@ -535,6 +539,19 @@ function latestMessageForChat(chatId: string): Message | null {
     .prepare('SELECT * FROM messages WHERE chat_id = ? ORDER BY ts DESC LIMIT 1')
     .get(chatId) as Record<string, unknown> | undefined;
   return row ? rowToMessage(row) : null;
+}
+
+/** Transient title for groups with no subject: member names minus self,
+ *  WhatsApp-style ("Arash Ghiassi, Riaz Sayani" / "A, B +3"). Never stored —
+ *  a real subject always wins once it appears. */
+export function syntheticGroupTitle(chat: { id: string; accountId: string }): string | null {
+  const me = chat.accountId.split(':')[1] ?? '';
+  const members = getChatParticipants(chat.id)
+    .filter((m) => m.id !== me)
+    .map((m) => m.name || m.id.replace('@lid', '').replace(/^\+?(\d{5})\d+/, '+$1…'));
+  if (!members.length) return null;
+  if (members.length <= 2) return members.join(', ');
+  return `${members[0]}, ${members[1]} +${members.length - 2}`;
 }
 
 // ---------- messages ----------
