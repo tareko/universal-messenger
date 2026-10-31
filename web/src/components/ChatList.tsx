@@ -22,6 +22,19 @@ export function ChatList() {
   const selectChat = useStore((s) => s.selectChat);
   const openNewChat = useStore((s) => s.openNewChat);
   const backfillHistory = useStore((s) => s.backfillHistory);
+  const closeChat = useStore((s) => s.closeChat);
+
+  /** Hard-delete a chat (messages + media) after an explicit confirm. */
+  async function onDelete(chatId: string, name: string, selId: string) {
+    const label = name || 'this chat';
+    if (!window.confirm(`Delete “${label}” and ALL its messages and media?\nThis cannot be undone.`)) return;
+    try {
+      await api.deleteChat(chatId);
+      if (useStore.getState().selectedChat === selId) closeChat();
+    } catch {
+      /* the SSE chats-updated broadcast refreshes the list regardless */
+    }
+  }
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Contact[]>([]);
   const [msgHits, setMsgHits] = useState<SearchHit[]>([]);
@@ -305,6 +318,7 @@ const displayRowsFn = (
                   onClick={() => void selectChat(r.selId)}
                   onTopPin={r.pinChatId ? (p) => void api.topPinChat(r.pinChatId!, p) : undefined}
                   onSurfacePin={r.pinChatId && r.group ? (p) => void api.pinChat(r.pinChatId!, p) : undefined}
+                  onDelete={r.pinChatId ? () => onDelete(r.pinChatId!, r.name, r.selId) : undefined}
                 />
               ))}
             {results.map((c) => (
@@ -360,6 +374,7 @@ const displayRowsFn = (
               onClick={() => void selectChat(r.selId)}
               onTopPin={r.pinChatId ? (p) => void api.topPinChat(r.pinChatId!, p) : undefined}
               onSurfacePin={r.pinChatId && r.group ? (p) => void api.pinChat(r.pinChatId!, p) : undefined}
+              onDelete={r.pinChatId ? () => onDelete(r.pinChatId!, r.name, r.selId) : undefined}
             />
           ))
         )}
@@ -453,6 +468,7 @@ function ChatRow({
   onClick,
   onTopPin,
   onSurfacePin,
+  onDelete,
 }: {
   name: string;
   subtitle: string;
@@ -472,6 +488,7 @@ function ChatRow({
   onClick: () => void;
   onTopPin?: (pinned: boolean) => void;
   onSurfacePin?: (pinned: boolean) => void;
+  onDelete?: () => void;
 }) {
   const allBadges = badges ?? (badge ? [badge] : []);
   return (
@@ -514,6 +531,19 @@ function ChatRow({
                 }}
               >
                 {topPinned ? '📍' : '📌'}
+              </span>
+            ) : null}
+            {onDelete ? (
+              <span
+                className="contact-pin delete"
+                role="button"
+                title="Delete chat and all its messages"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete();
+                }}
+              >
+                🗑
               </span>
             ) : null}
           </span>

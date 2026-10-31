@@ -1039,3 +1039,5 @@ body {
 .contact-row:hover .contact-row-actions { display: inline-flex; }
 .contact-pin.surface { font-size: 14px; color: var(--text-muted); }
 .contact-pin.surface.on { color: #e8a200; }
+
+.contact-pin.delete:hover { color: var(--danger); }

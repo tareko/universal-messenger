@@ -155,6 +155,8 @@ export const api = {
     postJson<{ ok: boolean }>('/chats/pin', { chatId, pinned }),
   topPinChat: (chatId: string, pinned: boolean) =>
     postJson<{ ok: boolean }>('/chats/top-pin', { chatId, pinned }),
+  deleteChat: (chatId: string) =>
+    postJson<{ ok: boolean }>('/chats/delete', { chatId }),
   hideChat: (chatId: string, hidden: boolean) =>
     postJson<{ ok: boolean }>('/chats/hide', { chatId, hidden }),
   setTranslateEnabled: (chatId: string, enabled: boolean) =>

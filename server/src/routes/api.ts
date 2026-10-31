@@ -19,6 +19,7 @@ import {
   setKv,
   setChatPinned,
   setChatTopPinned,
+  deleteChatCascade,
   setChatHidden,
   setChatsHidden,
   setChatTranslateEnabled,
@@ -55,7 +56,7 @@ import { syncContacts, getCarddavStatus, updateContactPhoto, createContact } fro
 import { aiEnabled } from '../ai/actions.js';
 import { config as appConfig } from '../config.js';
 import { getNotifySettings, saveNotifySettings, type NotifySettings } from '../notify/settings.js';import { broadcast } from '../realtime/sse.js';
-import { getMediaPath, mediaContentType, saveUploadedMedia, loadMediaBuffer, saveAvatar, getAvatarPath } from '../services/media.js';
+import { getMediaPath, mediaContentType, saveUploadedMedia, loadMediaBuffer, saveAvatar, getAvatarPath, deleteMediaFiles } from '../services/media.js';
 import { backfillReactions } from '../services/backfill.js';
 import { normalizeTel } from '../contacts/match.js';
 import { ingest } from '../services/ingest.js';
@@ -424,6 +425,18 @@ api.post('/chats/top-pin', (req, res) => {
   const { chatId, pinned } = req.body as { chatId: string; pinned: boolean };
   if (!chatId) return res.status(400).json({ error: 'chatId required' });
   setChatTopPinned(chatId, Boolean(pinned));
+  broadcast({ type: 'chats-updated' });
+  res.json({ ok: true });
+});
+
+/** Hard-delete a chat: messages, reactions, participants, the row, and the
+ *  chat's downloaded media files. Not synced to the provider/phone. */
+api.post('/chats/delete', (req, res) => {
+  const { chatId } = req.body as { chatId: string };
+  if (!chatId) return res.status(400).json({ error: 'chatId required' });
+  if (!getChat(chatId)) return res.status(404).json({ error: 'chat not found' });
+  const media = deleteChatCascade(chatId);
+  deleteMediaFiles(media);
   broadcast({ type: 'chats-updated' });
   res.json({ ok: true });
 });

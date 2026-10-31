@@ -466,6 +466,35 @@ export function setChatTopPinned(chatIdArg: string, top: boolean): void {
   getDb().prepare('UPDATE chats SET top_pinned = ? WHERE id = ?').run(top ? 1 : 0, chatIdArg);
 }
 
+/** Hard-delete a chat: messages, reactions, receipts, participants, the row.
+ *  Returns the media refs whose files the caller should unlink. */
+export function deleteChatCascade(chatIdArg: string): { url?: string }[] {
+  const db = getDb();
+  const media: { url?: string }[] = [];
+  const run = db.transaction(() => {
+    const rows = db.prepare('SELECT media FROM messages WHERE chat_id = ?').all(chatIdArg) as
+      { media: string | null }[];
+    for (const r of rows) {
+      if (!r.media) continue;
+      try {
+        media.push(...(JSON.parse(r.media) as { url?: string }[]));
+      } catch {
+        /* skip malformed */
+      }
+    }
+    db.prepare('DELETE FROM messages WHERE chat_id = ?').run(chatIdArg);
+    db.prepare('DELETE FROM reactions WHERE chat_id = ?').run(chatIdArg);
+    db.prepare(
+      'DELETE FROM receipt_readers WHERE message_id NOT IN (SELECT id FROM messages)'
+    ).run();
+    db.prepare('DELETE FROM chat_participants WHERE chat_id = ?').run(chatIdArg);
+    db.prepare('DELETE FROM kv WHERE key = ?').run(`participants_ts:${chatIdArg}`);
+    db.prepare('DELETE FROM chats WHERE id = ?').run(chatIdArg);
+  });
+  run();
+  return media;
+}
+
 /** Enable/disable the AI translate action for a chat (off by default). */
 export function setChatTranslateEnabled(chatIdArg: string, enabled: boolean): void {
   getDb().prepare('UPDATE chats SET translate_enabled = ? WHERE id = ?').run(enabled ? 1 : 0, chatIdArg);

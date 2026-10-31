@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { resolve, basename, extname } from 'node:path';
 import { config, projectRoot } from '../config.js';
 import type { MediaRef } from '../types.js';
@@ -61,6 +61,20 @@ function contentTypeForFile(file: string): string {
 
 export function getMediaPath(file: string): string {
   return resolve(mediaDir, basename(file));
+}
+
+/** Remove the on-disk files behind media refs (chat deletion). Missing
+ *  files (already gone, shared-hash duplicates cleaned earlier) are fine. */
+export function deleteMediaFiles(refs: { url?: string }[][] | { url?: string }[]): void {
+  const flat = Array.isArray(refs) ? refs.flat() : refs;
+  for (const r of flat) {
+    if (!r?.url) continue;
+    try {
+      rmSync(getMediaPath(r.url), { force: true });
+    } catch {
+      /* best effort */
+    }
+  }
 }
 
 export function mediaContentType(file: string): string {
