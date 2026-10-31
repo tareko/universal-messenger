@@ -271,7 +271,8 @@ export function ProfilePanel({
   }
 
   /** Delete one service's chat entirely (messages + media), per-service so a
-   *  multi-linked person keeps their other conversations. */
+   *  multi-linked person keeps their other conversations. The person link is
+   *  KEPT — if the conversation reappears (new message), it re-merges. */
   async function deleteServiceChat(chatId: string) {
     const c = chats.find((x) => x.id === chatId);
     const svc = c ? (c.name ?? c.title ?? c.contactRaw ?? c.remoteId) : 'this chat';
@@ -279,7 +280,6 @@ export function ProfilePanel({
       return;
     await run(async () => {
       await api.deleteChat(chatId);
-      await api.updatePerson(person!.id, { removeChatIds: [chatId] }).catch(() => {});
       await refreshPeople();
       await refreshChats();
     });
