@@ -270,6 +270,21 @@ export function ProfilePanel({
     await run(() => api.updatePerson(person!.id, { removeChatIds: [chatId] }));
   }
 
+  /** Delete one service's chat entirely (messages + media), per-service so a
+   *  multi-linked person keeps their other conversations. */
+  async function deleteServiceChat(chatId: string) {
+    const c = chats.find((x) => x.id === chatId);
+    const svc = c ? (c.name ?? c.title ?? c.contactRaw ?? c.remoteId) : 'this chat';
+    if (!window.confirm(`Delete the ${svc} conversation?\nAll its messages and media will be removed. This cannot be undone.`))
+      return;
+    await run(async () => {
+      await api.deleteChat(chatId);
+      await api.updatePerson(person!.id, { removeChatIds: [chatId] }).catch(() => {});
+      await refreshPeople();
+      await refreshChats();
+    });
+  }
+
   return (
     <>
       <div className="dialog-backdrop" onClick={onClose} />
@@ -549,6 +564,14 @@ export function ProfilePanel({
                     onClick={() => void unlinkChat(c.id)}
                   >
                     ✕
+                  </button>
+                  <button
+                    className="attach-remove"
+                    title="Delete this conversation (messages + media)"
+                    disabled={busy}
+                    onClick={() => void deleteServiceChat(c.id)}
+                  >
+                    🗑
                   </button>
                 </>
               )}
