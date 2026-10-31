@@ -66,7 +66,7 @@ export interface StoreState {
   ) => Promise<void>;
   retryText: (id: string, text: string) => Promise<void>;
   reactMessage: (messageId: string, emoji: string) => Promise<void>;
-  deleteMessage: (msg: Message) => Promise<void>;
+  deleteMessage: (msg: Message, mode: 'everyone' | 'me') => Promise<void>;
   forwardMessage: (messageId: string, targetChatId: string) => Promise<void>;
   replyPrivately: (msg: Message) => Promise<void>;
   setReplyTo: (msg: Message | null) => void;
@@ -434,20 +434,11 @@ export const useStore = create<StoreState>((set, get) => ({
     void get().refreshChats();
   },
 
-  /** Delete a message — for-everyone where the provider supports it (own
-   *  messages; WhatsApp ~2-day window), else remove our local copy. */
-  deleteMessage: async (msg) => {
-    const provider = msg.accountId.split(':')[0];
-    const supportsEveryone = provider === 'whatsapp' || provider === 'signal' || provider === 'mattermost';
-    const everyone = supportsEveryone && msg.outgoing === 1;
-    const ageH = (Date.now() - msg.ts) / 3600_000;
-    const stale = provider === 'whatsapp' && ageH > 48;
-    const what = everyone ? 'for everyone' : 'from this app only';
-    const hint = stale ? '\n(Note: older than WhatsApp ~2-day limit — may be refused.)' : '';
-    if (!window.confirm(`Delete this message ${what}?${hint}`)) return;
+  /** Delete a message — mode chosen by the delete dialog. */
+  deleteMessage: async (msg, mode) => {
     try {
-      await api.deleteMessage(msg.id, everyone);
-      if (everyone) {
+      await api.deleteMessage(msg.id, mode === 'everyone');
+      if (mode === 'everyone') {
         // Tombstone locally at once (server broadcast reconciles).
         set({
           messages: get().messages.map((m) => (m.id === msg.id ? { ...m, deleted: 1 } : m)),

@@ -143,12 +143,14 @@ export function Thread() {
   const selectChat = useStore((s) => s.selectChat);
   const retryText = useStore((s) => s.retryText);
   const deleteMessage = useStore((s) => s.deleteMessage);
+  const [busyDelete, setBusyDelete] = useState(false);
   const reactMessage = useStore((s) => s.reactMessage);
   const replyPrivately = useStore((s) => s.replyPrivately);
   const setReplyTo = useStore((s) => s.setReplyTo);
   const setEditing = useStore((s) => s.setEditing);
   const scrollNonce = useStore((s) => s.scrollNonce);
   const [forwarding, setForwarding] = useState<Message | null>(null);
+  const [deleting, setDeleting] = useState<Message | null>(null);
   const [showJump, setShowJump] = useState(false);
 
   // Sending a message (or a provider echo arriving) scrolls to the bottom.
@@ -563,7 +565,7 @@ export function Thread() {
                 onEdit={() => setEditing(m)}
                 onReplyPrivately={() => void replyPrivately(m)}
                 onForward={() => setForwarding(m)}
-                onDelete={() => void deleteMessage(m)}
+                onDelete={() => setDeleting(m)}
                 onRetry={(msg) => void retryText(msg.id, msg.body)}
                 onQuoteClick={() => void jumpToMessage(m.quotedId!, m.quoted?.chatId)}
               />
@@ -573,6 +575,56 @@ export function Thread() {
       </div>
 
       {forwarding && <ForwardDialog message={forwarding} onClose={() => setForwarding(null)} />}
+      {deleting && (
+        <>
+          <div className="dialog-backdrop" onClick={() => setDeleting(null)} />
+          <div className="dialog" role="dialog" aria-label="Delete message">
+            <div className="dialog-title">Delete message?</div>
+            <p className="profile-hint" dir="auto">
+              “{(deleting.body || (deleting.media?.length ? '📷 Photo' : '')).slice(0, 120)}
+              {deleting.body && deleting.body.length > 120 ? '…' : ''}”
+            </p>
+            <div className="dialog-actions">
+              {deleting.outgoing === 1 &&
+                ['whatsapp', 'signal', 'mattermost'].includes(deleting.accountId.split(':')[0]) && (
+                  <button
+                    className="send-btn"
+                    disabled={busyDelete}
+                    onClick={() => {
+                      setBusyDelete(true);
+                      void deleteMessage(deleting, 'everyone').finally(() => {
+                        setBusyDelete(false);
+                        setDeleting(null);
+                      });
+                    }}
+                  >
+                    Delete for everyone
+                    {deleting.accountId.split(':')[0] === 'whatsapp' &&
+                    Date.now() - deleting.ts > 48 * 3600_000
+                      ? ' (past 2-day limit)'
+                      : ''}
+                  </button>
+                )}
+              <button
+                className="dialog-cancel"
+                disabled={busyDelete}
+                onClick={() => {
+                  setBusyDelete(true);
+                  void deleteMessage(deleting, 'me').finally(() => {
+                    setBusyDelete(false);
+                    setDeleting(null);
+                  });
+                }}
+              >
+                Delete for me
+              </button>
+              <button className="dialog-cancel" onClick={() => setDeleting(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </>
+      )}
       {showProfile && (
         <ProfilePanel chat={chat} person={person ?? null} memberChats={memberChats} onClose={() => setShowProfile(false)} />
       )}
