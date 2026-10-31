@@ -142,6 +142,7 @@ export function Thread() {
   const loadOlderMessages = useStore((s) => s.loadOlderMessages);
   const selectChat = useStore((s) => s.selectChat);
   const retryText = useStore((s) => s.retryText);
+  const deleteMessage = useStore((s) => s.deleteMessage);
   const reactMessage = useStore((s) => s.reactMessage);
   const replyPrivately = useStore((s) => s.replyPrivately);
   const setReplyTo = useStore((s) => s.setReplyTo);
@@ -562,6 +563,7 @@ export function Thread() {
                 onEdit={() => setEditing(m)}
                 onReplyPrivately={() => void replyPrivately(m)}
                 onForward={() => setForwarding(m)}
+                onDelete={() => void deleteMessage(m)}
                 onRetry={(msg) => void retryText(msg.id, msg.body)}
                 onQuoteClick={() => void jumpToMessage(m.quotedId!, m.quoted?.chatId)}
               />
@@ -667,6 +669,7 @@ function Bubble({
   onForward,
   onRetry,
   onQuoteClick,
+  onDelete,
 }: {
   msg: Message;
   isGroup: boolean;
@@ -682,6 +685,7 @@ function Bubble({
   onForward: () => void;
   onRetry: (msg: Message) => void;
   onQuoteClick: () => void;
+  onDelete: () => void;
 }) {
   const [hover, setHover] = useState(false);
   const [picker, setPicker] = useState(false);
@@ -921,6 +925,9 @@ function Bubble({
                     ↪
                   </button>
                 )}
+                <button className="action-btn" title="Delete message" onClick={onDelete}>
+                  🗑
+                </button>
               </>
             )}
           </div>

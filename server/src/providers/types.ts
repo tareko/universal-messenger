@@ -103,6 +103,11 @@ export interface Provider {
   fetchParticipants?(chat: Chat): Promise<{ id: string; name: string }[] | null>;
   /** Edit one of our own messages in place (where the service supports it). */
   editMessage?(chat: Chat, target: Message, newBody: string): Promise<void>;
+  /**
+   * Delete a message for everyone (tombstone on all participants' devices).
+   * Providers may refuse by time limit/permissions — errors bubble up.
+   */
+  deleteMessage?(chat: Chat, target: Message): Promise<void>;
   /** Fetch the chat/contact profile photo (null = unavailable). */
   fetchAvatar?(chat: Chat): Promise<{ data: Buffer; contentType: string } | null>;
   /**

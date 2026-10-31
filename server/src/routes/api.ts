@@ -27,6 +27,7 @@ import {
   getChatParticipants,
   replaceChatParticipants,
   getParticipantsAge,
+  deleteMessage,
   getTags,
   createTag,
   deleteTag,
@@ -779,6 +780,35 @@ api.post('/edit', async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error('[api] edit failed:', (err as Error).message);
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+/** Delete a message. forEveryone=true asks the provider to revoke it on all
+ *  devices (WhatsApp: ~2-day window, own messages or admin in groups);
+ *  false removes only our local copy. */
+api.post('/delete', async (req, res) => {
+  try {
+    const { messageId, forEveryone } = req.body as { messageId: string; forEveryone?: boolean };
+    if (!messageId) return res.status(400).json({ error: 'messageId required' });
+    const target = getMessage(messageId);
+    if (!target) return res.status(404).json({ error: 'message not found' });
+    if (forEveryone) {
+      const chat = getChat(target.chatId);
+      if (!chat) return res.status(404).json({ error: 'chat not found' });
+      const provider = providerForAccount(chat.accountId);
+      if (!provider?.deleteMessage) {
+        return res.status(400).json({ error: 'delete-for-everyone not supported on this service' });
+      }
+      await provider.deleteMessage(chat, target);
+    } else {
+      deleteMessage(messageId);
+      broadcast({ type: 'message-deleted', data: { id: messageId, chatId: target.chatId } });
+    }
+    broadcast({ type: 'chats-updated' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[api] delete failed:', (err as Error).message);
     res.status(500).json({ error: (err as Error).message });
   }
 });

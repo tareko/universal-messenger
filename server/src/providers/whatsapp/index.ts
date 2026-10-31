@@ -1307,6 +1307,19 @@ export class WhatsAppProvider implements Provider {
     if (updated) broadcast({ type: 'message-updated', data: updated });
   }
 
+  /** Delete-for-everyone (WhatsApp allows ~2 days; group admins may delete
+   *  others' messages). The revoke echo arrives as messages.update — we
+   *  tombstone immediately so the UI reflects it without waiting. */
+  async deleteMessage(chat: Chat, target: Message): Promise<void> {
+    if (!this.sock || this.state !== 'open') throw new Error('whatsapp not connected');
+    await this.sock.sendMessage(this.jidForChat(chat), {
+      delete: this.reconstructKey(target),
+    });
+    markMessageDeleted(target.id);
+    const updated = getMessage(target.id);
+    if (updated) broadcast({ type: 'message-updated', data: updated });
+  }
+
   /** Tell the chat we're typing (WhatsApp shows "typing…" to the other side). */
   async sendTyping(chat: Chat): Promise<void> {
     if (!this.sock || this.state !== 'open') return;
