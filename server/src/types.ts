@@ -92,6 +92,8 @@ export interface Chat {
   ephemeralSeconds?: number;
   /** Group chat pinned into the main chat list (Groups tab otherwise). */
   pinned?: number;
+  /** 1 = a real DAV address-book contact exists for this chat's number. */
+  contactCard?: number;
   /** Float this chat to the top of its list (any type). */
   topPinned?: number;
   /** Shelved conversation (Hidden tab until manually restored). */

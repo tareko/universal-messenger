@@ -87,6 +87,8 @@ export interface Chat {
   ephemeralSeconds?: number;
   /** Group pinned into the main chat list (1) vs Groups tab (0). */
   pinned?: number;
+  /** 1 = a real DAV address-book contact exists for this chat's number. */
+  contactCard?: number;
   /** Floated to the top of its list (any chat type). */
   topPinned?: number;
   /** Shelved conversation (1 = Hidden tab until manually restored). */

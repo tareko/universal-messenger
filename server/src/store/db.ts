@@ -445,6 +445,7 @@ function rowToChat(r: Record<string, unknown>): Chat {
     contactRaw: r.contact_raw ? String(r.contact_raw) : '',
     title: r.title ? String(r.title) : null,
     name: r.name !== undefined && r.name !== null ? String(r.name) : null,
+    contactCard: Number(r.has_contact ?? 0),
     unread: r.unread !== undefined ? Number(r.unread) : 0,
     ts: r.ts !== undefined ? Number(r.ts) : 0,
     ephemeralSeconds: Number(r.ephemeral_seconds ?? 0),
@@ -537,6 +538,7 @@ export function getChats(accountId?: string): Chat[] {
   const rows = getDb()
     .prepare(
       `SELECT c.*, COALESCE(ct.name, nm.name) AS name,
+              EXISTS(SELECT 1 FROM contacts x WHERE x.tel = c.remote_id) AS has_contact,
               m.ts AS ts, m.id AS last_id,
               (SELECT COUNT(*) FROM messages u WHERE u.chat_id = c.id AND u.outgoing = 0 AND u.read = 0) AS unread
        FROM chats c
