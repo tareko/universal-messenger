@@ -47,7 +47,7 @@ export interface StoreState {
   selectAccount: (accountId: string) => Promise<void>;
   selectChat: (chatId: string) => Promise<void>;
   closeChat: () => void;
-  openNewChat: (to: string) => Promise<void>;
+  openNewChat: (to: string, accountId?: string) => Promise<void>;
   refreshChats: () => Promise<void>;
   refreshPeople: () => Promise<void>;
   saveNotifySettings: (s: NotifySettings) => Promise<void>;
@@ -175,14 +175,14 @@ export const useStore = create<StoreState>((set, get) => ({
     set({ selectedChat: null, messages: [], replyTo: null });
   },
 
-  openNewChat: async (to: string) => {
+  openNewChat: async (to: string, accountId?: string) => {
     const { accounts, selectedAccount } = get();
-    // New chats by phone number only make sense on an SMS-capable account.
     const account =
+      (accountId ? accounts.find((a) => a.id === accountId) : undefined) ??
       (selectedAccount !== 'all' ? accounts.find((a) => a.id === selectedAccount) : undefined) ??
       accounts.find((a) => a.provider === 'voipms');
     if (!account) {
-      set({ error: 'No SMS-capable account to start a chat from' });
+      set({ error: 'No account to start a chat from' });
       return;
     }
     try {

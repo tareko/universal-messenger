@@ -55,6 +55,14 @@ export function ChatList() {
   const groupCount = allChats.filter((c) => c.type === 'group' && !c.hidden).length;
   const hiddenCount = allChats.filter((c) => c.hidden).length;
 
+  // Services that can start a brand-new conversation from a raw phone number.
+  const isPhoneQuery = query.replace(/\D/g, '').length >= 7;
+  const startableAccounts = isPhoneQuery
+    ? accounts.filter(
+        (a) => ['voipms', 'whatsapp', 'signal'].includes(a.provider) && a.status === 'active'
+      )
+    : [];
+
   useEffect(() => {
     const q = query.trim();
     if (!q) {
@@ -348,9 +356,36 @@ const displayRowsFn = (
               </>
             )}
             {displayRows.length === 0 && results.length === 0 && msgHits.length === 0 && (
-              <div className="empty-hint">
-                No matches for “{query}”. Enter a phone number to start a new SMS chat.
-              </div>
+              <>
+                {/* Phone-like query: offer to start the chat on each attached
+                    phone-capable service (SMS, WhatsApp, Signal). */}
+                {startableAccounts.length > 0 ? (
+                  <>
+                    <div className="search-section">Start a new chat with {query.trim()}</div>
+                    {startableAccounts.map((a) => (
+                      <button
+                        key={a.id}
+                        className="contact-row"
+                        onClick={() => void openNewChat(query.trim(), a.id)}
+                      >
+                        <span className="provider-badge">{providerBadge(a.provider)}</span>
+                        <div className="contact-row-main">
+                          <div className="contact-row-top">
+                            <span className="contact-name">
+                              {STARTABLE_LABELS[a.provider] ?? a.provider} — {query.trim()}
+                            </span>
+                          </div>
+                          <div className="contact-row-bottom">
+                            <span className="contact-preview">New conversation</span>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </>
+                ) : (
+                  <div className="empty-hint">No matches for “{query}”.</div>
+                )}
+              </>
             )}
           </>
         ) : (
@@ -438,6 +473,13 @@ function chatRowEqual(
     JSON.stringify(a.tags) === JSON.stringify(b.tags)
   );
 }
+
+// Services that can start a brand-new conversation from a raw phone number.
+const STARTABLE_LABELS: Record<string, string> = {
+  voipms: 'SMS',
+  whatsapp: 'WhatsApp',
+  signal: 'Signal',
+};
 
 const MemoChatRow = memo(ChatRow, chatRowEqual);
 
