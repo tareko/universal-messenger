@@ -120,7 +120,9 @@ export function ProfilePanel({
   const isDm = chat.type === 'dm';
   const account = accounts.find((a) => a.id === chat.accountId);
   const linkedChats = person ? memberChats : [chat];
-  const hasContactCard = Boolean(chat.name); // resolved from the DAV address book
+  // Real DAV contact existence — chat.name also carries WhatsApp pushNames,
+  // which masked the "create card" option.
+  const hasContactCard = chat.contactCard === 1;
   const muteKey = person ? `person:${person.id}` : chat.id;
   const defaultMuted = chat.type !== 'dm' && !chat.pinned;
   const muted =
