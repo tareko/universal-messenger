@@ -144,7 +144,9 @@ export class WhatsAppProvider implements Provider {
   }
 
   status(): string {
-    return this.state;
+    if (this.state === 'open') return this.state;
+    // Surface the loss reason for the status popover ("close (connection lost…)").
+    return this.lastError ? `${this.state} (${this.lastError})` : this.state;
   }
 
   getState(): { state: WaState; qr: string | null; accountId: string | null } {
@@ -314,9 +316,36 @@ export class WhatsAppProvider implements Provider {
 
   // ---------- connection ----------
 
+  /** Human-readable reason for the most recent connection loss (shown in the
+   *  status popover so a failed reconnect explains itself). */
+  private lastError: string | null = null;
+
   private async onConnection(u: Partial<ConnectionState>): Promise<void> {
-    const code = (u.lastDisconnect?.error as { output?: { statusCode?: number } } | undefined)
-      ?.output?.statusCode;
+    const err = u.lastDisconnect?.error as
+      | { message?: string; output?: { statusCode?: number; payload?: unknown } }
+      | undefined;
+    const code = err?.output?.statusCode;
+    if (u.connection === 'close') {
+      const REASONS: Record<number, string> = {
+        400: 'bad request',
+        401: 'logged out — session invalid, re-link with QR',
+        402: 'connection closed',
+        403: 'forbidden',
+        408: 'connection lost / timed out',
+        411: 'multi-device mismatch — update needed',
+        428: 'connection replaced by another session',
+        440: 'replaced by another device',
+        500: 'bad session — re-link may be needed',
+        515: 'restart required (server-side)',
+      };
+      const detail =
+        err?.message && !/closed connection/i.test(err.message) ? err.message : undefined;
+      const payload = JSON.stringify(err?.output?.payload ?? '');
+      this.lastError =
+        (code !== undefined ? REASONS[code] ?? `code ${code}` : 'closed') +
+        (detail ? ` (${detail.slice(0, 80)})` : '') +
+        (payload && payload !== '""' && payload.length > 4 ? ` ${payload.slice(0, 100)}` : '');
+    }
     if (u.qr) {
       this.state = 'qr';
       this.qr = u.qr;
@@ -324,6 +353,7 @@ export class WhatsAppProvider implements Provider {
     }
     if (u.connection === 'open') {
       this.state = 'open';
+      this.lastError = null;
       this.qr = null;
       this.wasPaired = true;
       // Backoff resets only after the connection is STABLE for 60s. Resetting

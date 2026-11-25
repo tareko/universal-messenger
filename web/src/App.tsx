@@ -111,6 +111,7 @@ function StatusBar({
   const [stealth, setStealth] = useState(() => localStorage.getItem('um-hide-previews') === '1');
   const [servicesOpen, setServicesOpen] = useState(false);
   const [reconnecting, setReconnecting] = useState<string | null>(null);
+  const [reconnectError, setReconnectError] = useState<string | null>(null);
   if (!status) return null;
   const providerSummary = Object.entries(status.providers)
     .map(([id, s]) => `${id}: ${s}`)
@@ -127,10 +128,11 @@ function StatusBar({
 
   async function reconnect(id: string) {
     setReconnecting(id);
+    setReconnectError(null);
     try {
       await api.reconnectProvider(id);
-    } catch {
-      /* status popover reflects the result on the next status push */
+    } catch (e) {
+      setReconnectError(`${id}: ${(e as Error).message}`);
     } finally {
       setTimeout(() => setReconnecting(null), 1500);
     }
@@ -168,8 +170,16 @@ function StatusBar({
                   <div className="services-row" key={id}>
                     <span className={`sse-dot ${healthy ? 'connected' : needsSetup ? 'neutral' : 'connecting'}`} />
                     <span className="services-name">{PROVIDER_LABELS[id] ?? id}</span>
-                    <span className="services-state" title={state}>
-                      {healthy ? 'online' : needsSetup ? 'not configured' : state.replace(/^error:?\s*/, '') || 'offline'}
+                    <span className={`services-state${healthy ? '' : ' down'}`} title={state}>
+                      {healthy
+                        ? 'online'
+                        : needsSetup
+                          ? 'not configured'
+                          : reconnectError?.startsWith(`${id}:`)
+                            ? reconnectError.slice(id.length + 2)
+                            : reconnecting === id
+                              ? 'reconnecting…'
+                              : state.replace(/^error:?\s*/, '') || 'offline'}
                     </span>
                     {!healthy && !needsSetup && id !== 'voipms' && (
                       <button
