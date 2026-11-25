@@ -122,6 +122,29 @@ api.post('/providers/whatsapp/connect', async (_req, res) => {
   }
 });
 
+/** Force a fresh connection for a provider (status popover ↻). */
+api.post('/providers/:id/reconnect', async (req, res) => {
+  const id = String(req.params.id);
+  try {
+    switch (id) {
+      case 'whatsapp':
+        await whatsapp()?.reconnect();
+        break;
+      case 'signal':
+        await signal()?.connect();
+        break;
+      case 'mattermost':
+        await mattermost()?.connect();
+        break;
+      default:
+        return res.status(400).json({ error: `${id} has no reconnect action` });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 /** Current pairing QR as a PNG data URL (only while state === 'qr'). */
 api.get('/providers/whatsapp/qr', async (_req, res) => {
   const wa = whatsapp();

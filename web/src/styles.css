@@ -1041,3 +1041,37 @@ body {
 .contact-pin.surface.on { color: #e8a200; }
 
 .contact-pin.delete:hover { color: var(--danger); }
+
+/* ---------- Service status popover (click "Live") ---------- */
+.status-services-wrap { position: relative; display: inline-flex; }
+.status-live {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: none; background: transparent; cursor: pointer;
+  font: inherit; color: inherit; padding: 2px 6px; border-radius: 6px;
+}
+.status-live:hover { background: var(--border); }
+.status-live.degraded { color: #b26a00; font-weight: 600; }
+.services-popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 95;
+  width: 280px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  padding: 10px 12px 12px;
+}
+.services-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 0; font-size: 13px;
+}
+.services-name { flex: 1; font-weight: 500; }
+.services-state { color: var(--text-muted); font-size: 12px; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.services-reconnect {
+  border: 1px solid var(--border); background: #fff; border-radius: 6px;
+  width: 24px; height: 24px; cursor: pointer; font-size: 14px; line-height: 1; color: var(--accent);
+}
+.services-reconnect:hover { background: var(--accent); color: #fff; }
+.sse-dot.neutral { background: #b0b6bd; }

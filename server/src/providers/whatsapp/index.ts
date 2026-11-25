@@ -122,6 +122,18 @@ export class WhatsAppProvider implements Provider {
     }
   }
 
+  /** Manual reconnect: tear the socket down (unlike connect(), which
+   *  early-returns while a socket exists) and connect fresh. */
+  async reconnect(): Promise<void> {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    if (this.connectWatchdog) clearTimeout(this.connectWatchdog);
+    this.sock?.end(undefined);
+    this.sock = null;
+    this.reconnectAttempts = 0;
+    await this.connect();
+  }
+
   stop(): void {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     if (this.recoveryTimer) clearInterval(this.recoveryTimer);

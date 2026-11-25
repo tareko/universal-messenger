@@ -159,6 +159,8 @@ export const api = {
     postJson<{ ok: boolean }>('/chats/delete', { chatId }),
   deleteMessage: (messageId: string, forEveryone: boolean) =>
     postJson<{ ok: boolean }>('/delete', { messageId, forEveryone }),
+  reconnectProvider: (id: string) =>
+    postJson<{ ok: boolean }>(`/providers/${encodeURIComponent(id)}/reconnect`, {}),
   hideChat: (chatId: string, hidden: boolean) =>
     postJson<{ ok: boolean }>('/chats/hide', { chatId, hidden }),
   setTranslateEnabled: (chatId: string, enabled: boolean) =>

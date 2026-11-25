@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from './store';
+import { api } from './api';
 import { useSSE } from './hooks/useSSE';
 import { requestNotificationPermission } from './hooks/useNotifications';
 import { AccountSwitcher } from './components/AccountSwitcher';
@@ -108,10 +109,15 @@ function StatusBar({
   aiEnabled: boolean;
 }) {
   const [stealth, setStealth] = useState(() => localStorage.getItem('um-hide-previews') === '1');
+  const [servicesOpen, setServicesOpen] = useState(false);
+  const [reconnecting, setReconnecting] = useState<string | null>(null);
   if (!status) return null;
   const providerSummary = Object.entries(status.providers)
     .map(([id, s]) => `${id}: ${s}`)
     .join(' · ');
+  const anyDown = Object.values(status.providers).some(
+    (s) => !/^ok|^open/.test(s) && s !== 'needs-api'
+  );
 
   function toggleStealth() {
     const next = !stealth;
@@ -119,14 +125,68 @@ function StatusBar({
     localStorage.setItem('um-hide-previews', next ? '1' : '0');
   }
 
+  async function reconnect(id: string) {
+    setReconnecting(id);
+    try {
+      await api.reconnectProvider(id);
+    } catch {
+      /* status popover reflects the result on the next status push */
+    } finally {
+      setTimeout(() => setReconnecting(null), 1500);
+    }
+  }
+
   return (
     <footer className="status-bar">
       <button className="stealth-toggle" title="Notification settings" onClick={onOpenNotify}>
         🔔
       </button>
-      <span>
-        <span className={`sse-dot ${sseStatus}`} />
-        {sseStatus === 'connected' ? 'Live' : 'Reconnecting'}
+      <span className="status-services-wrap">
+        <button
+          className={`status-live${anyDown || sseStatus !== 'connected' ? ' degraded' : ''}`}
+          title="Service status — click for details"
+          onClick={() => setServicesOpen((o) => !o)}
+        >
+          <span className={`sse-dot ${sseStatus}`} />
+          {sseStatus === 'connected' ? 'Live' : 'Reconnecting'}
+          {anyDown ? ' ⚠' : ''}
+        </button>
+        {servicesOpen && (
+          <>
+            <div className="dialog-backdrop" onClick={() => setServicesOpen(false)} />
+            <div className="services-popover" role="dialog" aria-label="Service status">
+              <div className="dialog-title">Services</div>
+              <div className="services-row">
+                <span className={`sse-dot ${sseStatus}`} />
+                <span className="services-name">Realtime stream</span>
+                <span className="services-state">{sseStatus === 'connected' ? 'connected' : 'reconnecting…'}</span>
+              </div>
+              {Object.entries(status.providers).map(([id, state]) => {
+                const healthy = /^ok|^open/.test(state);
+                const needsSetup = state === 'needs-api';
+                return (
+                  <div className="services-row" key={id}>
+                    <span className={`sse-dot ${healthy ? 'connected' : needsSetup ? 'neutral' : 'connecting'}`} />
+                    <span className="services-name">{PROVIDER_LABELS[id] ?? id}</span>
+                    <span className="services-state" title={state}>
+                      {healthy ? 'online' : needsSetup ? 'not configured' : state.replace(/^error:?\s*/, '') || 'offline'}
+                    </span>
+                    {!healthy && !needsSetup && id !== 'voipms' && (
+                      <button
+                        className="services-reconnect"
+                        title={`Reconnect ${PROVIDER_LABELS[id] ?? id}`}
+                        disabled={reconnecting !== null}
+                        onClick={() => void reconnect(id)}
+                      >
+                        {reconnecting === id ? '…' : '↻'}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
       </span>
       <span title={providerSummary}>📡</span>
       <span title={`Contacts: ${status.carddav}`}>👤</span>
