@@ -75,6 +75,9 @@ export type WaState = 'idle' | 'connecting' | 'qr' | 'open' | 'close';
  * Unofficial: the account is linked by scanning a QR code, like WhatsApp Web.
  * Session credentials persist under data/sessions/whatsapp/.
  */
+/** Recovery sweep backoff (ms): 90s → 3m → 10m → 30m (cap). */
+const RECOVERY_BACKOFF = [90_000, 180_000, 600_000, 1_800_000];
+
 export class WhatsAppProvider implements Provider {
   id = 'whatsapp';
   capabilities = {
@@ -98,6 +101,8 @@ export class WhatsAppProvider implements Provider {
   private stableTimer: NodeJS.Timeout | null = null;
   private connectWatchdog: NodeJS.Timeout | null = null;
   private recoveryTimer: NodeJS.Timeout | null = null;
+  private nextRecoveryAt = 0;
+  private recoveryFailures = 0;
   private pendingGroupTitle = new Set<string>();
   private wasPaired = false;
 
@@ -111,14 +116,24 @@ export class WhatsAppProvider implements Provider {
     // Boot-time safety net: if the network isn't up yet when the service
     // starts, the first connect can die without ever scheduling a retry
     // (observed after host reboot: state 'close', zero log lines, no timer).
-    // Sweep every 90s and connect whenever nothing else is pending.
+    // Connect whenever nothing else is pending — with BACKOFF: repeated
+    // failed attempts are what gets a session throttled by WhatsApp (the
+    // edge then stalls every handshake with an instant 408), so after each
+    // failed recovery wait 90s → 3m → 10m → 30m before trying again.
     if (!this.recoveryTimer) {
+      this.nextRecoveryAt = Date.now();
       this.recoveryTimer = setInterval(() => {
         if (this.state === 'open' || this.state === 'qr') return;
         if (this.sock || this.reconnectTimer) return; // an attempt is in flight or scheduled
-        console.warn(`[whatsapp] recovery sweep: state=${this.state}, no attempt pending — connecting`);
+        if (Date.now() < this.nextRecoveryAt) return;
+        const waitMin = Math.round(RECOVERY_BACKOFF[Math.min(this.recoveryFailures, RECOVERY_BACKOFF.length - 1)] / 60_000);
+        console.warn(
+          `[whatsapp] recovery sweep: state=${this.state} — connecting (next retry in ${waitMin}m if this fails)`
+        );
         void this.connect().catch((e) => console.error('[whatsapp] recovery connect failed:', (e as Error).message));
-      }, 90_000);
+        this.nextRecoveryAt = Date.now() + RECOVERY_BACKOFF[Math.min(this.recoveryFailures, RECOVERY_BACKOFF.length - 1)];
+        this.recoveryFailures++;
+      }, 30_000);
     }
   }
 
@@ -131,6 +146,8 @@ export class WhatsAppProvider implements Provider {
     this.sock?.end(undefined);
     this.sock = null;
     this.reconnectAttempts = 0;
+    this.recoveryFailures = 0;
+    this.nextRecoveryAt = Date.now();
     await this.connect();
   }
 
@@ -145,8 +162,11 @@ export class WhatsAppProvider implements Provider {
 
   status(): string {
     if (this.state === 'open') return this.state;
-    // Surface the loss reason for the status popover ("close (connection lost…)").
-    return this.lastError ? `${this.state} (${this.lastError})` : this.state;
+    // Surface the loss reason for the status popover ("close (connection lost…)"),
+    // and when the recovery backoff has us waiting, say for how long.
+    const waitMs = this.nextRecoveryAt - Date.now();
+    const waiting = waitMs > 60_000 && !this.sock && !this.reconnectTimer ? `; retrying in ${Math.ceil(waitMs / 60_000)}m` : '';
+    return this.lastError ? `${this.state} (${this.lastError})${waiting}` : this.state + waiting;
   }
 
   getState(): { state: WaState; qr: string | null; accountId: string | null } {
@@ -354,6 +374,7 @@ export class WhatsAppProvider implements Provider {
     if (u.connection === 'open') {
       this.state = 'open';
       this.lastError = null;
+      this.recoveryFailures = 0;
       this.qr = null;
       this.wasPaired = true;
       // Backoff resets only after the connection is STABLE for 60s. Resetting

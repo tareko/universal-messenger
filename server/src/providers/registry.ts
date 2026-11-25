@@ -51,18 +51,22 @@ export function providerStatuses(): Record<string, string> {
   return out;
 }
 
-/** Instantiate and start all providers. Credentials-gated providers self-disable. */
+/** Instantiate and start all providers. Credentials-gated providers self-disable.
+ *  Starts run CONCURRENTLY — a provider stuck retrying its network (voip.ms
+ *  522s on a slow link) must not hold every other provider's startup hostage. */
 export async function startProviders(): Promise<void> {
   registerProvider(new VoipMsProvider());
   registerProvider(new WhatsAppProvider());
   registerProvider(new TelegramProvider());
   registerProvider(new MattermostProvider());
   registerProvider(new SignalProvider());
-  for (const p of providers.values()) {
-    try {
-      await p.start();
-    } catch (err) {
-      console.error(`[providers] ${p.id} failed to start:`, (err as Error).message);
-    }
-  }
+  await Promise.all(
+    [...providers.values()].map(async (p) => {
+      try {
+        await p.start();
+      } catch (err) {
+        console.error(`[providers] ${p.id} failed to start:`, (err as Error).message);
+      }
+    })
+  );
 }
