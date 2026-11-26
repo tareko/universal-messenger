@@ -1,12 +1,15 @@
 import { getKv, setKv } from '../../store/db.js';
 import {
   addReaction,
+  getChat,
+  getOrCreateChat,
   getMessage,
   getName,
   getReactionsForMessage,
   isRecentOutgoing,
   markMessageDeleted,
   removeReactions,
+  replaceChatParticipants,
   setAccountStatus,
   setName,
   setProviderAccountsStatus,
@@ -189,7 +192,7 @@ export class SignalProvider implements Provider {
     this.state = 'open';
     broadcast({ type: 'accounts', data: listAccounts() });
     console.log(`[signal] connected as ${this.number}`);
-    void this.syncContacts();
+    void this.syncContacts().then(() => this.syncGroups());
     this.connectWs();
   }
 
@@ -200,6 +203,58 @@ export class SignalProvider implements Provider {
   private uuidToNumber = new Map<string, string>();
   private lastContactSync = 0;
   private healthTimer: NodeJS.Timeout | null = null;
+
+  /** Group names + members from the sidecar. Messages often carry no
+   *  groupInfo.name, so chats created from them end up untitled (and before
+   *  the fix, named after whoever spoke). The sidecar is authoritative. */
+  private async syncGroups(): Promise<void> {
+    if (!this.number || !this.accountId) return;
+    try {
+      const res = await fetch(`${this.base}/v1/groups/${encodeURIComponent(this.number)}`, {
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!res.ok) return;
+      const groups = (await res.json()) as {
+        id?: string;
+        internal_id?: string;
+        name?: string;
+        members?: string[];
+      }[];
+      let fixed = 0;
+      for (const g of groups) {
+        if (!g.name) continue;
+        const keys = [g.id, g.internal_id ? `group.${g.internal_id}` : null].filter(Boolean) as string[];
+        for (const key of keys) {
+          const chatId = `${this.accountId}:${key}`;
+          const existing = getChat(chatId);
+          if (!existing) continue;
+          // Blank title, or a title/contactRaw that is actually a person's
+          // name (the old ingest bug) — heal both.
+          if (!existing.title || existing.contactRaw !== g.name) {
+            getOrCreateChat(this.accountId, key, {
+              type: 'group',
+              title: g.name,
+              contactRaw: g.name,
+            });
+            fixed++;
+          }
+          if (g.members?.length) {
+            replaceChatParticipants(
+              chatId,
+              g.members
+                .map((m) => ({ id: m, name: getName(m) ?? getName(this.uuidToNumber.get(m) ?? '') ?? '' }))
+            );
+          }
+        }
+      }
+      if (fixed) {
+        broadcast({ type: 'chats-updated' });
+        console.log(`[signal] group sync: titled ${fixed} chats`);
+      }
+    } catch (e) {
+      console.error('[signal] group sync failed:', (e as Error).message);
+    }
+  }
 
   private async syncContacts(): Promise<void> {
     if (!this.number) return;
@@ -421,7 +476,13 @@ export class SignalProvider implements Provider {
           chatRemoteId,
           chatType: groupId ? 'group' : 'dm',
           chatTitle: dm.groupInfo?.name,
-          contactRaw: opts.outgoing ? (opts.destination ?? '') : (env.sourceName ?? source),
+          // Groups: the sender's name must never become the chat's name —
+          // use the group name, else the id ("Council-2026", not "Gertrud").
+          contactRaw: groupId
+            ? (dm.groupInfo?.name ?? chatRemoteId)
+            : opts.outgoing
+              ? (opts.destination ?? '')
+              : (env.sourceName ?? source),
           // Phone/uuid as sender id (reactions + reply-privately resolution).
           sender: groupId ? senderId : undefined,
           ts: dm.timestamp || Date.now(),
