@@ -409,6 +409,11 @@ export class SignalProvider implements Provider {
       }
       if (!text && !media) return;
 
+      // Sender must be an IDENTIFIER (phone, else uuid) — reactions send it as
+      // target_author and Signal rejects names. Display name → names table.
+      const senderId = env.sourceNumber ?? source;
+      if (!opts.outgoing && env.sourceName) setName(senderId, env.sourceName);
+
       await ingest(
         {
           id: baseId,
@@ -417,8 +422,8 @@ export class SignalProvider implements Provider {
           chatType: groupId ? 'group' : 'dm',
           chatTitle: dm.groupInfo?.name,
           contactRaw: opts.outgoing ? (opts.destination ?? '') : (env.sourceName ?? source),
-          // Phone as sender id (enables reply-privately DM resolution).
-          sender: groupId ? (env.sourceNumber ?? env.sourceName ?? source) : undefined,
+          // Phone/uuid as sender id (reactions + reply-privately resolution).
+          sender: groupId ? senderId : undefined,
           ts: dm.timestamp || Date.now(),
           outgoing: opts.outgoing,
           body: text,
