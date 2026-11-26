@@ -117,7 +117,7 @@ function StatusBar({
     .map(([id, s]) => `${id}: ${s}`)
     .join(' · ');
   const anyDown = Object.values(status.providers).some(
-    (s) => !/^ok|^open/.test(s) && s !== 'needs-api'
+    (s) => !/^ok|^open/.test(s) && s !== 'needs-api' && s !== 'unlinked'
   );
 
   function toggleStealth() {
@@ -166,22 +166,25 @@ function StatusBar({
               {Object.entries(status.providers).map(([id, state]) => {
                 const healthy = /^ok|^open/.test(state);
                 const needsSetup = state === 'needs-api';
+                const unlinked = state === 'unlinked';
                 return (
                   <div className="services-row" key={id}>
-                    <span className={`sse-dot ${healthy ? 'connected' : needsSetup ? 'neutral' : 'connecting'}`} />
+                    <span className={`sse-dot ${healthy ? 'connected' : needsSetup || unlinked ? 'neutral' : 'connecting'}`} />
                     <span className="services-name">{PROVIDER_LABELS[id] ?? id}</span>
                     <span className={`services-state${healthy ? '' : ' down'}`} title={state}>
                       {healthy
                         ? 'online'
                         : needsSetup
                           ? 'not configured'
-                          : reconnectError?.startsWith(`${id}:`)
+                          : unlinked
+                            ? 'not linked — link in Accounts'
+                            : reconnectError?.startsWith(`${id}:`)
                             ? reconnectError.slice(id.length + 2)
                             : reconnecting === id
                               ? 'reconnecting…'
                               : state.replace(/^error:?\s*/, '') || 'offline'}
                     </span>
-                    {!healthy && !needsSetup && id !== 'voipms' && (
+                    {!healthy && !needsSetup && !unlinked && id !== 'voipms' && (
                       <button
                         className="services-reconnect"
                         title={`Reconnect ${PROVIDER_LABELS[id] ?? id}`}

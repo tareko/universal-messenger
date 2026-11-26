@@ -162,6 +162,10 @@ export class WhatsAppProvider implements Provider {
 
   status(): string {
     if (this.state === 'open') return this.state;
+    // No session = unlinked. Say so instead of "close": reconnects can't help,
+    // only a QR link (Accounts dialog) can — the popover offers no ↻ for this.
+    const hasSession = existsSync(sessionDir) && readdirSync(sessionDir).length > 0;
+    if (!hasSession) return 'unlinked';
     // Surface the loss reason for the status popover ("close (connection lost…)"),
     // and when the recovery backoff has us waiting, say for how long.
     const waitMs = this.nextRecoveryAt - Date.now();
@@ -423,7 +427,15 @@ export class WhatsAppProvider implements Provider {
         console.log('[whatsapp] logged out — session cleared');
       } else {
         this.state = 'close';
-        // Reconnect only when previously paired (unpaired QR timeouts shouldn't loop).
+        // Log the unpaired case too — a fresh pairing being refused looked
+        // exactly like a silent no-op before ("Connect does nothing").
+        if (!this.wasPaired) {
+          console.warn(
+            `[whatsapp] pairing attempt closed (code ${code}) before a QR was issued — WhatsApp is refusing new links right now; wait and retry`
+          );
+          broadcast({ type: 'accounts', data: listAccounts() });
+          return;
+        }
         if (this.wasPaired || code !== DisconnectReason.timedOut) {
           // Exponential backoff with proportional jitter (3s → 5min cap). The
           // high cap matters during flapping/outages: each attempt is a full
