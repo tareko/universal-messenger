@@ -101,7 +101,9 @@ export function AccountsDialog({ onClose }: { onClose: () => void }) {
               <p>
                 {wa?.state === 'connecting'
                   ? 'Connecting…'
-                  : 'Not linked. Link your WhatsApp like WhatsApp Web.'}
+                  : wa?.state === 'close'
+                    ? 'Linked, but disconnected. Reconnect, or unlink to start fresh.'
+                    : 'Not linked. Link your WhatsApp like WhatsApp Web.'}
               </p>
               <button
                 className="dialog-cancel"

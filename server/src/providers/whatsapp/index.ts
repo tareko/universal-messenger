@@ -174,7 +174,11 @@ export class WhatsAppProvider implements Provider {
   }
 
   getState(): { state: WaState; qr: string | null; accountId: string | null } {
-    return { state: this.state, qr: this.state === 'qr' ? this.qr : null, accountId: this.accountId };
+    // No session = 'idle' for the UI (not linked; Accounts offers "Connect"),
+    // never a leftover 'close' (which made it show stale unlink controls).
+    const hasSession = existsSync(sessionDir) && readdirSync(sessionDir).length > 0;
+    const state: WaState = !hasSession && this.state !== 'qr' ? 'idle' : this.state;
+    return { state, qr: state === 'qr' ? this.qr : null, accountId: this.accountId };
   }
 
   async connect(): Promise<void> {
