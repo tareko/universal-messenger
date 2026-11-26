@@ -532,13 +532,16 @@ export class SignalProvider implements Provider {
     }
   }
 
-  /** Identifier the sidecar accepts for a chat. Group ids are stored as
-   *  'group.<base64>' but when that base64 contains '/', '+' or '=' the
-   *  sidecar's parser rejects the 'group.'-prefixed form as invalid (clean
-   *  base64 ids pass by luck — the Phoenix group didn't). The bare internal
-   *  id is accepted for every group. */
+  /** Identifier the sidecar resolves for a chat. We store groups as
+   *  'group.<internal_id>' where internal_id is already base64; the sidecar
+   *  wants that internal_id string base64-encoded ONCE MORE ('group.' +
+   *  base64(internal_id) — exactly its own /v1/groups `id` field). Groups
+   *  whose internal_id contains '/', '+' or '=' (Phoenix) resolve under no
+   *  other form; clean ids happened to pass with the raw form. */
   private static sidecarId(chat: Chat): string {
-    return chat.remoteId.replace(/^group\./, '');
+    const m = /^group\.(.+)$/.exec(chat.remoteId);
+    if (!m) return chat.remoteId; // dm: '+1555...'
+    return `group.${Buffer.from(m[1], 'utf-8').toString('base64')}`;
   }
 
   /** signal-cli recipients format for a chat remoteId. */
