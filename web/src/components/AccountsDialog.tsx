@@ -98,19 +98,32 @@ export function AccountsDialog({ onClose }: { onClose: () => void }) {
             </div>
           ) : (
             <div className="wa-linked">
-              <p>
-                {wa?.state === 'connecting'
-                  ? 'Connecting…'
-                  : wa?.state === 'close'
+              {wa?.state === 'connecting' ? (
+                <p className="profile-hint">Contacting WhatsApp for a pairing code…</p>
+              ) : wa?.pairingError ? (
+                <>
+                  <p className="attach-error">{wa.pairingError}</p>
+                  <p className="profile-hint">
+                    Each attempt resets WhatsApp's timer — leave it alone for a few hours if it keeps failing.
+                  </p>
+                </>
+              ) : (
+                <p>
+                  {wa?.state === 'close'
                     ? 'Linked, but disconnected. Reconnect, or unlink to start fresh.'
                     : 'Not linked. Link your WhatsApp like WhatsApp Web.'}
-              </p>
+                </p>
+              )}
               <button
                 className="dialog-cancel"
-                disabled={busy}
+                disabled={busy || wa?.state === 'connecting'}
                 onClick={() => void run(() => api.whatsappConnect())}
               >
-                {wa?.state === 'connecting' ? 'Waiting…' : 'Connect WhatsApp'}
+                {wa?.state === 'connecting'
+                  ? 'Contacting WhatsApp…'
+                  : wa?.pairingError
+                    ? 'Try again'
+                    : 'Connect WhatsApp'}
               </button>
               {wa?.state === 'close' && (
                 <button

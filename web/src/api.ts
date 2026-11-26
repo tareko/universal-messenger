@@ -46,6 +46,8 @@ export interface WhatsAppState {
   state: 'idle' | 'connecting' | 'qr' | 'open' | 'close' | 'unavailable';
   qr: string | null; // data URL when returned by /qr
   accountId: string | null;
+  /** Why the last pairing attempt was refused (null when fine). */
+  pairingError?: string | null;
 }
 
 export interface TelegramState {

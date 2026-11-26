@@ -173,12 +173,19 @@ export class WhatsAppProvider implements Provider {
     return this.lastError ? `${this.state} (${this.lastError})${waiting}` : this.state + waiting;
   }
 
-  getState(): { state: WaState; qr: string | null; accountId: string | null } {
+  getState(): { state: WaState; qr: string | null; accountId: string | null; pairingError: string | null } {
     // No session = 'idle' for the UI (not linked; Accounts offers "Connect"),
     // never a leftover 'close' (which made it show stale unlink controls).
     const hasSession = existsSync(sessionDir) && readdirSync(sessionDir).length > 0;
-    const state: WaState = !hasSession && this.state !== 'qr' ? 'idle' : this.state;
-    return { state, qr: state === 'qr' ? this.qr : null, accountId: this.accountId };
+    const state: WaState =
+      !hasSession && this.state !== 'qr' && this.state !== 'connecting' ? 'idle' : this.state;
+    return {
+      state,
+      qr: state === 'qr' ? this.qr : null,
+      accountId: this.accountId,
+      // While pairing: 'connecting' with an explanation once a refusal lands.
+      pairingError: hasSession ? null : this.pairingError,
+    };
   }
 
   async connect(): Promise<void> {
@@ -347,6 +354,8 @@ export class WhatsAppProvider implements Provider {
   /** Human-readable reason for the most recent connection loss (shown in the
    *  status popover so a failed reconnect explains itself). */
   private lastError: string | null = null;
+  /** Why the last pairing attempt failed (shown in the Accounts dialog). */
+  private pairingError: string | null = null;
 
   private async onConnection(u: Partial<ConnectionState>): Promise<void> {
     const err = u.lastDisconnect?.error as
@@ -377,6 +386,7 @@ export class WhatsAppProvider implements Provider {
     if (u.qr) {
       this.state = 'qr';
       this.qr = u.qr;
+      this.pairingError = null;
       console.log('[whatsapp] QR ready — scan with your phone');
     }
     if (u.connection === 'open') {
@@ -434,6 +444,10 @@ export class WhatsAppProvider implements Provider {
         // Log the unpaired case too — a fresh pairing being refused looked
         // exactly like a silent no-op before ("Connect does nothing").
         if (!this.wasPaired) {
+          this.pairingError =
+            code === 408 || code === 405
+              ? 'WhatsApp is refusing new links right now (throttled). Wait a few hours without retrying, then try again.'
+              : `Pairing failed (code ${code ?? 'unknown'}). Try again.`;
           console.warn(
             `[whatsapp] pairing attempt closed (code ${code}) before a QR was issued — WhatsApp is refusing new links right now; wait and retry`
           );
