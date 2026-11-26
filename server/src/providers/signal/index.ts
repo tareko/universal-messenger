@@ -554,18 +554,35 @@ export class SignalProvider implements Provider {
       throw new Error('signal not connected');
     }
     const targetTs = Number(target.id.slice(`${this.accountId}:`.length).split(':').pop());
+    // Removal on this sidecar build: the same emoji with remove:true (an
+    // empty reaction string is rejected as "reaction missing").
+    const removing = emoji === '';
+    const existing = removing
+      ? (getReactionsForMessage(target.id) ?? []).find((r) => r.from === 'me')?.emoji
+      : null;
+    if (removing && !existing) return; // nothing to remove
     const res = await fetch(`${this.base}/v1/reactions/${encodeURIComponent(this.number)}`, {
       method: 'POST',
       signal: AbortSignal.timeout(10000),
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        reaction: emoji,
+        reaction: removing ? existing : emoji,
+        ...(removing ? { remove: true } : {}),
         recipient: chat.remoteId,
         target_author: target.outgoing === 1 ? this.number : (target.sender ?? chat.remoteId),
         timestamp: targetTs,
       }),
     });
     if (!res.ok) throw new Error(`signal reactions: HTTP ${res.status}`);
+    if (removing) {
+      removeReactions(target.id, 'me');
+      const updatedR = getMessage(target.id);
+      if (updatedR) {
+        updatedR.reactions = getReactionsForMessage(target.id);
+        broadcast({ type: 'message-updated', data: updatedR });
+      }
+      return;
+    }
     addReaction({
       id: `${target.id}:me`,
       messageId: target.id,

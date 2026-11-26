@@ -1508,7 +1508,10 @@ export class WhatsAppProvider implements Provider {
     await this.sock.sendMessage(jid, {
       react: { text: emoji, key: this.reconstructKey(target) },
     });
-    addReaction({
+    if (emoji === '') {
+      // '' = remove my reaction (WhatsApp convention); drop it locally too.
+      removeReactions(target.id, 'me');
+    } else addReaction({
       id: `${target.id}:me`,
       messageId: target.id,
       chatId: chat.id,

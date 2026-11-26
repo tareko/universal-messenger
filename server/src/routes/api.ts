@@ -1047,7 +1047,8 @@ api.post('/react', async (req, res) => {
       messageId: string;
       emoji: string;
     };
-    if (!messageId || !emoji) {
+    // emoji === '' means REMOVE my reaction (convention shared by providers).
+    if (!messageId || emoji === undefined || emoji === null) {
       return res.status(400).json({ error: 'messageId, emoji required' });
     }
     const target = getMessage(messageId);
