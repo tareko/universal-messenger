@@ -532,9 +532,18 @@ export class SignalProvider implements Provider {
     }
   }
 
+  /** Identifier the sidecar accepts for a chat. Group ids are stored as
+   *  'group.<base64>' but when that base64 contains '/', '+' or '=' the
+   *  sidecar's parser rejects the 'group.'-prefixed form as invalid (clean
+   *  base64 ids pass by luck — the Phoenix group didn't). The bare internal
+   *  id is accepted for every group. */
+  private static sidecarId(chat: Chat): string {
+    return chat.remoteId.replace(/^group\./, '');
+  }
+
   /** signal-cli recipients format for a chat remoteId. */
   private static recipientsFor(chat: Chat): string[] {
-    return [chat.remoteId]; // dm: '+1555...', group: 'group.<base64>'
+    return [SignalProvider.sidecarId(chat)];
   }
 
   private async postSend(body: Record<string, unknown>): Promise<void> {
@@ -629,7 +638,7 @@ export class SignalProvider implements Provider {
       body: JSON.stringify({
         reaction: removing ? existing : emoji,
         ...(removing ? { remove: true } : {}),
-        recipient: chat.remoteId,
+        recipient: SignalProvider.sidecarId(chat),
         target_author: target.outgoing === 1 ? this.number : (target.sender ?? chat.remoteId),
         timestamp: targetTs,
       }),
@@ -667,7 +676,7 @@ export class SignalProvider implements Provider {
         method: 'POST',
         signal: AbortSignal.timeout(5000),
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recipient: chat.remoteId, action: 'start' }),
+        body: JSON.stringify({ recipient: SignalProvider.sidecarId(chat), action: 'start' }),
       });
     } catch {
       /* non-fatal */
