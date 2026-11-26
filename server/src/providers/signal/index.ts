@@ -1,6 +1,7 @@
 import { getKv, setKv } from '../../store/db.js';
 import {
   addReaction,
+  findMessageIdsBySuffix,
   getChat,
   getOrCreateChat,
   getMessage,
@@ -397,18 +398,36 @@ export class SignalProvider implements Provider {
         }
       }
 
+      // Resolve a protocol target (delete/edit) by its sent timestamp. The
+      // envelope's chat id form (sync of an own phone action carries the
+      // destination in a different encoding than we stored, and may omit
+      // groupInfo) doesn't always match, so fall back to a suffix lookup.
+      const resolveTarget = (ts: number): string | null => {
+        const direct = `${this.accountId}:${chatRemoteId}:${ts}`;
+        if (getMessage(direct)) return direct;
+        const hit = findMessageIdsBySuffix(this.accountId!, String(ts))[0];
+        return hit ? hit.id : null;
+      };
+
       // Delete-for-everyone.
       if (dm.remoteDelete?.timestamp) {
-        markMessageDeleted(`${this.accountId}:${chatRemoteId}:${dm.remoteDelete.timestamp}`);
-        const updated = getMessage(`${this.accountId}:${chatRemoteId}:${dm.remoteDelete.timestamp}`);
-        if (updated) broadcast({ type: 'message-updated', data: updated });
-        broadcast({ type: 'chats-updated' });
+        const targetId = resolveTarget(dm.remoteDelete.timestamp);
+        console.log(
+          `[signal] remoteDelete ts=${dm.remoteDelete.timestamp} chat=${chatRemoteId} → ${targetId ?? 'NOT FOUND'}`
+        );
+        if (targetId) {
+          markMessageDeleted(targetId);
+          const updated = getMessage(targetId);
+          if (updated) broadcast({ type: 'message-updated', data: updated });
+          broadcast({ type: 'chats-updated' });
+        }
         return;
       }
 
       // Edit.
       if (dm.editMessage?.targetSentTimestamp && dm.editMessage.dataMessage) {
-        const id = `${this.accountId}:${chatRemoteId}:${dm.editMessage.targetSentTimestamp}`;
+        const id = resolveTarget(dm.editMessage.targetSentTimestamp);
+        if (!id) return;
         updateMessageBody(id, dm.editMessage.dataMessage.message ?? '');
         const updated = getMessage(id);
         if (updated) {
