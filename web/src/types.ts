@@ -8,6 +8,7 @@ export interface MediaRef {
 export interface ReactionRef {
   emoji: string;
   from?: string;
+  fromName?: string | null;
 }
 
 export type ChatType = 'dm' | 'group' | 'channel';

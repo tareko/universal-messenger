@@ -1078,9 +1078,14 @@ function Bubble({
         </div>
         {msg.reactions && msg.reactions.length > 0 && (
           <div className={`reactions ${incoming ? 'in' : 'out'}`}>
-            {dedupeReactions(msg.reactions).map((r, i) => (
-              <span key={i} className="reaction-badge" title={r.from === 'me' ? 'You reacted' : 'Reaction'}>
-                {r.emoji}
+            {groupReactions(msg.reactions).map((g) => (
+              <span
+                key={g.emoji}
+                className={`reaction-badge${g.mine ? ' mine' : ''}`}
+                title={g.names.join(', ')}
+              >
+                {g.emoji}
+                {g.count > 1 && <span className="reaction-count">{g.count}</span>}
               </span>
             ))}
           </div>
@@ -1218,16 +1223,29 @@ function ContactActions({ chat }: { chat: import('../types').Chat }) {
   );
 }
 
-function dedupeReactions(reactions: { emoji: string; from?: string }[]) {
-  // collapse duplicates to one badge per emoji
-  const seen = new Set<string>();
-  const out: { emoji: string; from?: string }[] = [];
+/** One badge per emoji with a reactor count and a who-reacted tooltip
+ *  (names resolved server-side via fromName; ids fall back to formatted). */
+function groupReactions(reactions: { emoji: string; from?: string; fromName?: string | null }[]) {
+  const byEmoji = new Map<
+    string,
+    { emoji: string; count: number; mine: boolean; names: string[] }
+  >();
   for (const r of reactions) {
-    if (seen.has(r.emoji)) continue;
-    seen.add(r.emoji);
-    out.push(r);
+    let g = byEmoji.get(r.emoji);
+    if (!g) {
+      g = { emoji: r.emoji, count: 0, mine: false, names: [] };
+      byEmoji.set(r.emoji, g);
+    }
+    g.count++;
+    if (r.from === 'me') g.mine = true;
+    const label =
+      r.from === 'me'
+        ? 'You'
+        : r.fromName || (r.from && r.from !== 'others' ? formatNumber(r.from) : null) || 'Someone';
+    if (!g.names.includes(label)) g.names.push(label);
   }
-  return out;
+  // Mine first, then by popularity.
+  return [...byEmoji.values()].sort((a, b) => Number(b.mine) - Number(a.mine) || b.count - a.count);
 }
 
 function formatNumber(d: string | null): string {

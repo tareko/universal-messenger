@@ -950,7 +950,7 @@ export function getReactionsForMessage(id: string): ReactionRef[] {
   const rows = getDb()
     .prepare('SELECT emoji, from_sender FROM reactions WHERE message_id = ?')
     .all(id) as { emoji: string; from_sender: string | null }[];
-  return rows.map((r) => ({ emoji: r.emoji, from: r.from_sender ?? undefined }));
+  return rows.map((r) => reactionRef(r.emoji, r.from_sender));
 }
 
 /** Remove a reactor's reaction(s) from a message (emoji cleared on the provider). */
@@ -984,10 +984,24 @@ function reactionsForChat(chatIdArg: string): Map<string, ReactionRef[]> {
   const map = new Map<string, ReactionRef[]>();
   for (const r of rows) {
     const list = map.get(r.message_id) ?? [];
-    list.push({ emoji: r.emoji, from: r.from_sender ?? undefined });
+    list.push(reactionRef(r.emoji, r.from_sender));
     map.set(r.message_id, list);
   }
   return map;
+}
+
+/** ReactionRef with the reactor's display name resolved. */
+function reactionRef(emoji: string, fromSender: string | null): ReactionRef {
+  return {
+    emoji,
+    from: fromSender ?? undefined,
+    fromName:
+      fromSender === 'me'
+        ? 'You'
+        : fromSender && fromSender !== 'others'
+          ? (getName(fromSender) ?? null)
+          : null,
+  };
 }
 
 // ---------- chat participants (group members, for @mentions) ----------

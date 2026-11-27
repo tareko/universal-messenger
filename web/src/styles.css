@@ -1076,3 +1076,7 @@ body {
 .services-reconnect:hover { background: var(--accent); color: #fff; }
 .sse-dot.neutral { background: #b0b6bd; }
 .services-state.down { color: var(--danger); white-space: normal; max-width: 150px; }
+
+/* Reaction badges: count + own-reaction highlight */
+.reaction-badge.mine { border-color: var(--accent); color: var(--accent); }
+.reaction-count { font-size: 11px; margin-left: 2px; opacity: 0.85; }
