@@ -439,15 +439,23 @@ export class SignalProvider implements Provider {
 
       // Reaction.
       if (dm.reaction?.emoji !== undefined && dm.reaction.targetSentTimestamp) {
-        const targetId = `${this.accountId}:${chatRemoteId}:${dm.reaction.targetSentTimestamp}`;
+        const targetId = resolveTarget(dm.reaction.targetSentTimestamp);
+        if (!targetId) return;
         const from = env.sourceNumber ?? source;
+        // Capture the reactor's profile name (keyed by both uuid and phone) so
+        // the reaction tooltip can show it — people who only react never pass
+        // through the message-ingest name capture.
+        if (env.sourceName && from !== 'me') {
+          setName(from, env.sourceName);
+          if (env.source && env.source !== from) setName(env.source, env.sourceName);
+        }
         if (dm.reaction.isRemove || !dm.reaction.emoji) {
           removeReactions(targetId, from);
         } else {
           addReaction({
             id: `${targetId}:${from}`,
             messageId: targetId,
-            chatId: `${this.accountId}:${chatRemoteId}`,
+            chatId: getMessage(targetId)?.chatId ?? `${this.accountId}:${chatRemoteId}`,
             emoji: dm.reaction.emoji,
             fromSender: from,
             ts: dm.timestamp,
