@@ -231,6 +231,7 @@ export class WhatsAppProvider implements Provider {
     }
     this.state = 'connecting';
     this.qr = null;
+    this.qrIssued = false;
     const sock = makeWASocket({
       version,
       auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
@@ -377,6 +378,9 @@ export class WhatsAppProvider implements Provider {
   /** Set when WhatsApp rejected our client version (405) — forces a refetch
    *  and refuses to re-cache the same value. */
   private versionRejected = false;
+  /** A QR was issued during the current pairing attempt (distinguishes QR
+   *  expiry — a normal restart of the flow — from a refusal before any QR). */
+  private qrIssued = false;
 
   private async onConnection(u: Partial<ConnectionState>): Promise<void> {
     const err = u.lastDisconnect?.error as
@@ -407,6 +411,7 @@ export class WhatsAppProvider implements Provider {
     if (u.qr) {
       this.state = 'qr';
       this.qr = u.qr;
+      this.qrIssued = true;
       this.pairingError = null;
       console.log('[whatsapp] QR ready — scan with your phone');
     }
@@ -465,12 +470,25 @@ export class WhatsAppProvider implements Provider {
         // Log the unpaired case too — a fresh pairing being refused looked
         // exactly like a silent no-op before ("Connect does nothing").
         if (!this.wasPaired) {
+          if (this.qrIssued && code === DisconnectReason.timedOut) {
+            // QR expired — normal end of a pairing window. Restart the flow
+            // so a fresh QR appears without the user clicking again.
+            console.log('[whatsapp] pairing QR expired — fetching a new one');
+            this.qr = null;
+            this.sock = null;
+            this.reconnectTimer = setTimeout(() => {
+              this.reconnectTimer = null;
+              void this.connect();
+            }, 2000);
+            broadcast({ type: 'accounts', data: listAccounts() });
+            return;
+          }
           this.pairingError =
             code === 408 || code === 405
-              ? 'WhatsApp is refusing new links right now (throttled). Wait a few hours without retrying, then try again.'
+              ? 'WhatsApp is refusing new links right now. This usually means the client version is stale or the number was linked too often — wait a few hours, then try again.'
               : `Pairing failed (code ${code ?? 'unknown'}). Try again.`;
           console.warn(
-            `[whatsapp] pairing attempt closed (code ${code}) before a QR was issued — WhatsApp is refusing new links right now; wait and retry`
+            `[whatsapp] pairing attempt closed (code ${code}) before a QR was issued — refusing new links; wait and retry`
           );
           broadcast({ type: 'accounts', data: listAccounts() });
           return;

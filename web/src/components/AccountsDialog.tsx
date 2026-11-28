@@ -104,7 +104,7 @@ export function AccountsDialog({ onClose }: { onClose: () => void }) {
                 <>
                   <p className="attach-error">{wa.pairingError}</p>
                   <p className="profile-hint">
-                    Each attempt resets WhatsApp's timer — leave it alone for a few hours if it keeps failing.
+                    Usually a stale client version or too many link attempts — leave it a few hours before trying again.
                   </p>
                 </>
               ) : (
