@@ -192,24 +192,42 @@ export class WhatsAppProvider implements Provider {
     if (this.sock) return; // already connecting/connected
     mkdirSync(sessionDir, { recursive: true });
     const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
-    // Cache the WA web version for 24h — fetching it on every connect adds a
-    // web roundtrip to every reconnect burst (post-suspend flapping).
-    let version;
+    // Cache the WA web version — fetching it on every connect adds a web
+    // roundtrip to every reconnect burst. The fetcher itself is flaky (it has
+    // returned a stale version that then got locked in for 24h and 405'd
+    // every handshake for days), so: never cache a version OLDER than one
+    // we've already seen, and a 405-invalidated cache is re-fetched but only
+    // trusted if it moves forward.
+    let version: [number, number, number] | undefined;
     const cachedVersion = getKv('whatsapp:wa_version');
     const cachedAt = Number(getKv('whatsapp:wa_version_ts') ?? '0');
-    if (cachedVersion && Date.now() - cachedAt < 24 * 3600_000) {
-      const parts = cachedVersion.split('.').map(Number);
-      if (parts.length === 3 && parts.every((n) => Number.isFinite(n))) {
-        version = parts as [number, number, number];
-      }
+    const parse = (v: string): [number, number, number] | null => {
+      const parts = v.split('.').map(Number);
+      return parts.length === 3 && parts.every((n) => Number.isFinite(n))
+        ? (parts as [number, number, number])
+        : null;
+    };
+    const cmp = (a: number[], b: number[]) =>
+      a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+    const cached = cachedVersion ? parse(cachedVersion) : null;
+    if (cached && Date.now() - cachedAt < 24 * 3600_000 && !this.versionRejected) {
+      version = cached;
     } else {
       try {
-        version = (await fetchLatestBaileysVersion()).version;
-        setKv('whatsapp:wa_version', version.join('.'));
-        setKv('whatsapp:wa_version_ts', String(Date.now()));
+        const fetched = parse((await fetchLatestBaileysVersion()).version.join('.'));
+        // Only trust the fetch if it's newer than what we had (a 405 means
+        // the cached one is stale; re-caching the same stale value is the bug).
+        if (fetched && (!cached || cmp(fetched, cached) > 0 || !this.versionRejected)) {
+          version = fetched;
+          setKv('whatsapp:wa_version', fetched.join('.'));
+          setKv('whatsapp:wa_version_ts', String(Date.now()));
+        } else if (cached) {
+          version = cached; // fetch went backwards — keep what we had
+        }
       } catch {
-        version = undefined; // Baileys falls back to its bundled default
+        version = cached ?? undefined; // Baileys falls back to its bundled default
       }
+      this.versionRejected = false;
     }
     this.state = 'connecting';
     this.qr = null;
@@ -356,6 +374,9 @@ export class WhatsAppProvider implements Provider {
   private lastError: string | null = null;
   /** Why the last pairing attempt failed (shown in the Accounts dialog). */
   private pairingError: string | null = null;
+  /** Set when WhatsApp rejected our client version (405) — forces a refetch
+   *  and refuses to re-cache the same value. */
+  private versionRejected = false;
 
   private async onConnection(u: Partial<ConnectionState>): Promise<void> {
     const err = u.lastDisconnect?.error as
@@ -466,6 +487,7 @@ export class WhatsAppProvider implements Provider {
           // version — invalidate it so the next attempt fetches fresh.
           if (code === 405) {
             this.rejections405 += 1;
+            this.versionRejected = true;
             setKv('whatsapp:wa_version_ts', '0');
           } else {
             this.rejections405 = 0;
